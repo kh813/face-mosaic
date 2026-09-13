@@ -54,9 +54,16 @@ def main():
     )
     parser.add_argument(
         "inputs",
-        nargs="+",
+        nargs="*",
+        default=[],
         help="Input video file(s) or folder(s) to process"
     )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Launch the graphical user interface (GUI)"
+    )
+
     parser.add_argument(
         "--config", "-c",
         type=str,
@@ -125,7 +132,13 @@ def main():
 
     args = parser.parse_args()
 
+    if args.gui or len(args.inputs) == 0:
+        from .gui import run_app
+        run_app()
+        return
+
     # Load configuration
+
     config = AppConfig.load(args.config)
 
     # CLI Overrides

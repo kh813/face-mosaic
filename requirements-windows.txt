@@ -1,4 +1,9 @@
+# Requirements for Windows (Phase 2)
 -r requirements-common.txt
-# Phase 2 Windows dependency: onnxruntime-openvino or onnxruntime-directml
+
+# ONNX Runtime on Windows
+# Default builds use CPU / DirectML. For Intel Core Ultra NPU acceleration, install onnxruntime-openvino
 onnxruntime>=1.18.0
 # onnxruntime-openvino>=1.18.0
+# onnxruntime-directml>=1.18.0
+PySide6>=6.6.0

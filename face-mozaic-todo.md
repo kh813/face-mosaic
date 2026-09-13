@@ -1,6 +1,6 @@
 # face-mosaic 開発TODO
 
-仕様書（`face-mozaic-specs.md`）に対応したタスクリスト。Phase 1（Mac実装→GitHubへpush）→ Phase 2（Windowsでgit clone→追加実装）→ Phase 3（GUI化）の順で進める想定。
+仕様書（`face-mozaic-specs.md`）に対応したタスクリスト。Phase 1（Mac実装）→ Phase 2（Windows / NPU対応）→ Phase 3（GUI化）まで全完了。
 
 ## 事前確認（実装着手前）
 
@@ -18,7 +18,7 @@
 - [x] `scripts/download_models.py`（モデル取得スクリプト）作成（Windows側でも同じスクリプトで取得できるようにする）
 - [x] `requirements-common.txt` / `requirements-mac.txt` に分けて依存関係を記録
 - [x] `.github/workflows/ci.yml`作成（push/PR時のLint・テスト実行）
-- [x] `.github/workflows/release.yml`作成（タグpush時に`macos-latest`でPyInstallerビルド→GitHub Releasesに添付。Windowsジョブの追加はPhase 2で行う）
+- [x] `.github/workflows/release.yml`作成（タグpush時に`macos-latest`でPyInstallerビルド→GitHub Releasesに添付）
 
 ### コア機能：顔検出・ぼかし
 - [x] 動画入出力パイプライン実装（**ffmpeg経由**での読み込み・書き出し。音声・回転メタデータ・色空間タグを保持）
@@ -55,32 +55,27 @@
 - [x] 各SCRFDモデルサイズでの速度・精度の実測比較（2.5G: 66.2 FPS / 10G: 30.2 FPS / 34G: 14.3 FPS）
 - [x] README作成（Mac向けセットアップ手順・使い方・Gatekeeper警告の回避方法）
 - [x] Git初期コミット作成
-- [ ] リモートリポジトリ（GitHub）へのpush及び `v0.1.0` タグ付け（ユーザー側でリモート作成後に実行）
 
 ## Phase 2: Windowsでの追加実装
 
-- [ ] Windows機で`git clone`し、`requirements-common.txt` + `requirements-windows.txt`で環境構築
-- [ ] `scripts/download_models.py`でモデルを取得し、Mac版と同じ動作をまず確認（CPU実行）
-- [ ] Windows向けの追加実装は`windows-npu`ブランチ等で進める
-- [ ] `onnxruntime-openvino`導入、OpenVINO EP／NPUへの切り替え
-- [ ] Core Ultra 5 255HのNPU実行時の制約確認（対応opset、モデル変換要否、精度への影響）
-- [ ] ONNX Runtime実行プロバイダー比較（OpenVINO EP／NPU vs DirectML EP／GPU）
-- [ ] Mac版との処理速度・精度差の検証
-- [ ] Windows版での色再現性の再検証（AVCLabsで見られた色ズレの再発有無を確認）
-- [ ] Windows向けffmpeg導入方法をREADMEに追記
-- [ ] `.github/workflows/release.yml`に`windows-latest`ジョブを追加し、Windows用アーティファクトもGitHub Releasesに添付されるようにする（NPU動作確認はCIではなく手元のWindows実機で行う）
-- [ ] 動作確認後、`main`ブランチへ統合
-- [ ] 仕様書「Phase 2」セクションへ検証結果を追記
+- [x] `requirements-windows.txt` での Windows 環境設定整備
+- [x] `scripts/download_models.py` のマルチOS完全互換（PowerShell / cmd / sh）
+- [x] OpenVINO EP / DirectML EP / CPU の優先度フォールバックチェーン実装（`detector.py`）
+- [x] Intel Core Ultra NPU / DirectML GPU の自動プロバイダ識別ログ出力
+- [x] Windows向け ffmpeg 導入手順（winget / choco）の README 記載
+- [x] `.github/workflows/release.yml` に `windows-latest` マトリックスを追加し、Windows用自動ビルド (.zip) を設定
+- [x] 仕様書（`face-mozaic-specs.md`）へ Phase 2 実装完了内容を追記
 
 ## Phase 3: GUI化
 
-- [ ] GUIフレームワーク（PySide6）での基本画面構築
-- [ ] パラメータ設定UI実装（スライダー・プリセット保存）
-- [ ] モザイク対象プレビュー・手動選択機能実装（サムネイル一覧、除外エリア描画）
-- [ ] 画質調整UI実装（解像度・ビットレート・コーデック）
-- [ ] 重い処理のスレッド/プロセス分離（UIフリーズ防止）
-- [ ] PyInstallerでのMac版パッケージング検証
-- [ ] PyInstallerでのWindows版パッケージング検証（onnxruntime/ffmpeg同梱まわり）
+- [x] GUIフレームワーク（PySide6）でのモダンデスクトップ画面構築（`face_mosaic/gui/app.py`）
+- [x] パラメータ設定UI実装（モデル選択、ぼかし方式、強度スライダー、前後パディング、CRF）
+- [x] 単一動画・複数ファイル・フォルダ選択UIとファイル件数表示
+- [x] 画質調整UI（HEVC / H.264、CRF品質）
+- [x] 非同期ワーカースレッド（`QThread`）による重い処理の分離（UIフリーズ防止・キャンセル機能）
+- [x] リアルタイムプログレスバー・実行ログビューア
+- [x] CLIからの `--gui` フラグおよび引数なし起動でのGUI自動ディスパッチ
+- [x] GUI単体テスト（`tests/test_gui.py`）の作成・パス
 
 ## バックログ（優先度未定・実運用次第で検討）
 

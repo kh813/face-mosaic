@@ -59,17 +59,21 @@ class SCRFDDetector(BaseFaceDetector):
         # ONNX Runtime session configuration
         if providers is None:
             available = ort.get_available_providers()
-            # Preference: CoreMLExecutionProvider on macOS, OpenVINO on Windows if available, fallback CPU
+            # Priority: CoreML (Mac Apple Silicon), OpenVINO (Windows NPU/iGPU), DirectML (Windows GPU), CPU
             providers = []
             if "CoreMLExecutionProvider" in available:
                 providers.append("CoreMLExecutionProvider")
             if "OpenVINOExecutionProvider" in available:
                 providers.append("OpenVINOExecutionProvider")
+            if "DmlExecutionProvider" in available:
+                providers.append("DmlExecutionProvider")
             providers.append("CPUExecutionProvider")
 
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.session = ort.InferenceSession(str(self.model_path), sess_options=sess_options, providers=providers)
+        self.active_provider = self.session.get_providers()[0] if self.session.get_providers() else "Unknown"
+
         
         # Parse inputs/outputs
         self.input_name = self.session.get_inputs()[0].name

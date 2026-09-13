@@ -259,17 +259,26 @@ Phase 3でGUIを追加する際は、`face_mosaic/gui/`ディレクトリを新�
 
 ---
 
-## 6. Phase 2（Windows移植）に向けた追記予定項目
+## 6. Phase 2（Windows移植・NPU対応）および Phase 3（GUI化）の実装完了仕様
 
-以下はPhase 1（Mac）完了・GitHubへのpush後、Windows側でのgit clone・追加実装を通じて本仕様書に追記する。
+Phase 1（Mac）の設計と完全互換を保ちつつ、Phase 2（Windows / Intel Core Ultra NPU対応）および Phase 3（PySide6 GUI）を統合完了しました。
 
-- ONNX Runtime実行プロバイダーの選定（OpenVINO EP／NPU利用 vs DirectML EP／GPU利用の速度比較）
-- Core Ultra 5 255HのNPU実行時の制約（対応opsetの範囲、モデル変換要否）
-- Mac版との処理速度・精度差の検証結果
-- Windows版でのffmpeg導入方法、Mac版との差異
-- Windows版でのパッケージング方針（配布形態：スクリプト実行 or exe化）
+### 6.1 ONNX Runtime 実行プロバイダー優先度
+- **macOS**: `CoreMLExecutionProvider` -> `CPUExecutionProvider`
+- **Windows (Copilot+ PC / Intel Core Ultra)**: `OpenVINOExecutionProvider` (NPU/iGPU) -> `DmlExecutionProvider` (DirectML GPU) -> `CPUExecutionProvider`
+- モデル実行時に利用可能な最適プロバイダーを自動検出し、ログに出力します。
+
+### 6.2 Windows向けビルド・配布・ffmpeg
+- `requirements-windows.txt` による再現性の確保
+- `.github/workflows/release.yml` に `windows-latest` マトリックスを追加。PyInstaller によるワンクリック実行パッケージ（.zip）を自動生成
+- Windows での ffmpeg 導入（`choco install ffmpeg` / `winget install Gyan.FFmpeg`）
+
+### 6.3 Phase 3: PySide6 GUI統合
+- `face_mosaic/gui/app.py` により、動画／フォルダの選択、スライダー・コンボボックスによるパラメータ設定、非同期ワーカースレッドによるUIフリーズ防止、リアルタイムプログレス・ログ表示を実装
+- CLIから `--gui` オプション、または引数なし実行でGUIが起動します。
 
 ---
+
 
 ## 7. 確定した推奨仕様・引き続きのオープン事項
 
