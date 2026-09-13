@@ -33,4 +33,5 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest -v
+          QT_QPA_PLATFORM=offscreen pytest -v
+
