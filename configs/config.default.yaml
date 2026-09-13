@@ -1,0 +1,55 @@
+# Default configuration for face-mosaic
+
+# Face detection model settings
+model:
+  name: "scrfd_10g_bnkps.onnx"   # Options: scrfd_2.5g_bnkps.onnx, scrfd_10g_bnkps.onnx, scrfd_34g_gnkps.onnx
+  conf_threshold: 0.5            # Detection confidence threshold (0.0 - 1.0)
+  nms_threshold: 0.4             # Non-maximum suppression IoU threshold
+  min_face_size: 15              # Minimum face bounding box size in pixels
+  landmark_score_threshold: 0.3  # Landmark confidence filter
+
+# Tracking & temporal smoothing
+tracking:
+  iou_threshold: 0.3             # IoU threshold for matching face tracklets
+  max_missing_frames: 5          # Number of missing frames before track is dropped
+  padding_backward: 3            # Number of frames to extend blur backward (N)
+  padding_forward: 3             # Number of frames to extend blur forward (M)
+
+# Blur & mosaic effect settings
+blur:
+  type: "gaussian"               # Options: "gaussian" or "mosaic"
+  strength: 31                   # Gaussian blur kernel size (odd integer, e.g. 31, 51) or sigma
+  mosaic_block_size: 16          # Mosaic block size in pixels (if type == "mosaic")
+  margin_x: 0.2                  # Horizontal expansion ratio of bounding box (e.g. 0.2 = 20% on each side)
+  margin_y: 0.2                  # Vertical expansion ratio of bounding box
+
+# False positive reduction filters
+filters:
+  # Animal vs Human classifier
+  animal_filter:
+    enabled: true
+    human_prob_threshold: 0.5
+  
+  # Skin color check (YCbCr chrominance check to eliminate statues/bronze)
+  skin_color_filter:
+    enabled: true
+    min_skin_ratio: 0.15         # Minimum percentage of pixels within skin tone
+  
+  # Static photo / advertisement filter (Composite conditions, default OFF)
+  static_photo_filter:
+    enabled: false
+    min_static_frames: 30
+    motion_similarity_threshold: 0.95
+    texture_diff_threshold: 0.05
+  
+  # Fixed exclusion masks (normalized coordinates [x1, y1, x2, y2] between 0.0 and 1.0)
+  exclusion_masks: []
+
+# Output & encoding settings
+output:
+  codec: "hevc"                  # Options: "hevc" (libx265) or "h264" (libx264)
+  crf: 18                        # Constant Rate Factor (18-20 recommended for high quality)
+  preset: "medium"               # Encoder preset (ultrafast, fast, medium, slow)
+  preserve_color_tags: true      # Preserve BT.2020 / BT.709 color tags and ranges
+  output_dir: ""                 # Default is same directory as input file
+  filename_suffix: "_blurred"    # Output suffix before extension (e.g. foo_blurred.mp4)

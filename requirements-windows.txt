@@ -1,0 +1,4 @@
+-r requirements-common.txt
+# Phase 2 Windows dependency: onnxruntime-openvino or onnxruntime-directml
+onnxruntime>=1.18.0
+# onnxruntime-openvino>=1.18.0
