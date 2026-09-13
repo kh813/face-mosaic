@@ -63,6 +63,12 @@ def main():
         action="store_true",
         help="Launch the graphical user interface (GUI)"
     )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Run in folder watch mode (continuously monitor input folder for new videos)"
+    )
+
 
     parser.add_argument(
         "--config", "-c",
@@ -164,7 +170,17 @@ def main():
     if args.output_dir:
         config.output.output_dir = args.output_dir
 
+    # Folder Watch Mode
+    if args.watch:
+        from .watcher import FolderWatcher
+        target_dir = args.inputs[0] if args.inputs else "."
+        print(f"Starting Folder Watcher on: {target_dir}")
+        watcher = FolderWatcher(target_dir, config=config)
+        watcher.start()
+        return
+
     video_files = collect_video_files(args.inputs, recursive=not args.no_recursive)
+
     if not video_files:
         print("Error: No video files found matching the specified inputs.")
         sys.exit(1)

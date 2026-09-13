@@ -80,7 +80,11 @@ python -m face_mosaic.cli video.mp4 --blur-type gaussian --strength 45 --conf 0.
 # 高速モデル (2.5G)・H.264エンコーダ指定
 python -m face_mosaic.cli video.mp4 --model scrfd_2.5g_bnkps.onnx --codec h264 --crf 18
 
+# フォルダ監視モード（新規動画が追加されたら自動処理）
+python -m face_mosaic.cli /path/to/watch_folder --watch
+
 # 設定ファイル (YAML) を指定して実行
+
 python -m face_mosaic.cli video.mp4 --config configs/config.default.yaml
 ```
 
