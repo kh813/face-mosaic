@@ -150,6 +150,11 @@ def main():
     # CLI Overrides
     if args.model:
         config.model.name = args.model
+    elif args.config is None:
+        from .hardware import detect_hardware_profile
+        hw = detect_hardware_profile()
+        config.model.name = hw.recommended_model
+        print(f"[Hardware Auto-Select] {hw.reason}")
     if args.blur_type:
         config.blur.type = args.blur_type
     if args.strength:

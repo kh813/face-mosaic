@@ -63,9 +63,9 @@ class FaceTracker:
     def __init__(
         self,
         iou_threshold: float = 0.3,
-        max_missing_frames: int = 5,
-        padding_backward: int = 3,
-        padding_forward: int = 3,
+        max_missing_frames: int = 8,
+        padding_backward: int = 8,
+        padding_forward: int = 8,
         filters_config: Optional[FiltersConfig] = None
     ):
         self.iou_threshold = iou_threshold

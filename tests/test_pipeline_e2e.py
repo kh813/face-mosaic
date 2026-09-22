@@ -73,3 +73,64 @@ def test_cli_collect_video_files(synthetic_video_path):
     p = Path(synthetic_video_path)
     files = collect_video_files([str(p.parent)])
     assert any(f.name == "test_walk.mp4" for f in files)
+
+def test_pipeline_cancellation(synthetic_video_path):
+    models_dir = Path(__file__).resolve().parent.parent / "models"
+    model_file = models_dir / "scrfd_2.5g_bnkps.onnx"
+    if not model_file.exists():
+        pytest.skip("Model scrfd_2.5g_bnkps.onnx not found")
+
+    config = AppConfig()
+    config.model.name = "scrfd_2.5g_bnkps.onnx"
+    pipeline = ProcessingPipeline(config, model_dir=str(models_dir))
+
+    # Cancel immediately
+    res = pipeline.process_video(synthetic_video_path, cancel_check=lambda: True)
+    assert res.get("cancelled") is True
+    assert res.get("status") == "cancelled"
+
+
+def test_face_detection_properties():
+    from face_mosaic.detector import FaceDetection
+    det = FaceDetection(bbox=np.array([10.5, 20.2, 50.8, 60.4]), score=0.95)
+    assert det.x1 == pytest.approx(10.5)
+    assert det.y1 == pytest.approx(20.2)
+    assert det.x2 == pytest.approx(50.8)
+    assert det.y2 == pytest.approx(60.4)
+    assert det.width == pytest.approx(40.3)
+    assert det.height == pytest.approx(40.2)
+
+
+def test_pipeline_with_preview_callback_and_mock_detections(synthetic_video_path):
+    from unittest.mock import MagicMock
+    from face_mosaic.detector import FaceDetection
+
+    config = AppConfig()
+    config.model.name = "scrfd_2.5g_bnkps.onnx"
+    config.output.codec = "h264"
+    config.output.preset = "ultrafast"
+    pipeline = ProcessingPipeline(config)
+
+    # Mock detector to return real FaceDetection instances
+    mock_detector = MagicMock()
+    mock_detector.active_provider = "CPU"
+    mock_detector.detect.return_value = [
+        FaceDetection(bbox=np.array([20, 30, 80, 90]), score=0.88)
+    ]
+    pipeline.detector = mock_detector
+
+    preview_calls = []
+    def on_preview(frame, status_text=""):
+        preview_calls.append((frame.shape, status_text))
+
+    out_file = Path(synthetic_video_path).with_name("test_preview_out.mp4")
+    res = pipeline.process_video(
+        synthetic_video_path,
+        output_path=str(out_file),
+        preview_callback=on_preview
+    )
+
+    assert res["status"] == "success"
+    assert len(preview_calls) > 0
+    assert any("Pass 1" in text or "Detection" in text for _, text in preview_calls)
+

@@ -23,6 +23,22 @@ class FaceDetection:
         self.landmarks = np.array(landmarks, dtype=np.float32) if landmarks is not None else None
 
     @property
+    def x1(self) -> float:
+        return float(self.bbox[0])
+
+    @property
+    def y1(self) -> float:
+        return float(self.bbox[1])
+
+    @property
+    def x2(self) -> float:
+        return float(self.bbox[2])
+
+    @property
+    def y2(self) -> float:
+        return float(self.bbox[3])
+
+    @property
     def width(self) -> float:
         return self.bbox[2] - self.bbox[0]
 

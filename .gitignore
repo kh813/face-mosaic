@@ -53,3 +53,15 @@ output/
 
 # Local configs
 config.local.yaml
+
+# Portable binaries & temporary archives
+bin/
+python_embed/
+*.zip
+*.exe
+
+# Logs
+logs/
+*.log
+
+

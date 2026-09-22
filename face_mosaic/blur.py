@@ -13,8 +13,8 @@ class FaceBlurrer:
         blur_type: str = "gaussian",
         strength: int = 31,
         mosaic_block_size: int = 16,
-        margin_x: float = 0.2,
-        margin_y: float = 0.2
+        margin_x: float = 0.35,
+        margin_y: float = 0.35
     ):
         self.blur_type = blur_type.lower()
         self.strength = strength if strength % 2 == 1 else strength + 1  # ensure odd

@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Optional, Callable, Dict, Any, List
 import time
 import numpy as np
+import cv2
 
 from .config import AppConfig
-from .io_utils import probe_video, VideoReader, VideoWriter
+from .io_utils import probe_video, VideoReader, VideoWriter, PrefetchedVideoReader
 from .detector import SCRFDDetector
 from .tracker import FaceTracker
 from .blur import FaceBlurrer
@@ -53,7 +54,9 @@ class ProcessingPipeline:
         self,
         input_path: str,
         output_path: Optional[str] = None,
-        progress_callback: Optional[Callable[[str, int, int, float], None]] = None
+        progress_callback: Optional[Callable[[str, int, int, float], None]] = None,
+        preview_callback: Optional[Callable[..., None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None
     ) -> Dict[str, Any]:
         """
         Process a single video file.
@@ -85,23 +88,48 @@ class ProcessingPipeline:
 
         # ----------------- PASS 1: Face Detection & Tracking -----------------
         print(f"\n[Pass 1/2] Detecting faces in {in_path.name} ({info.width}x{info.height}, {info.fps:.2f} fps)...")
-        reader1 = VideoReader(str(in_path))
+        reader1 = PrefetchedVideoReader(str(in_path))
         frame_idx = 0
-        
         pass1_start = time.time()
-        for frame in reader1:
-            # Filter detections by min_face_size
-            detections = self.detector.detect(frame)
-            valid_dets = [
-                d for d in detections 
-                if min(d.width, d.height) >= self.config.model.min_face_size
-            ]
-            tracker.update(frame_idx, frame, valid_dets)
-            frame_idx += 1
-            if progress_callback:
-                progress_callback("Detection", frame_idx, info.total_frames or frame_idx, time.time() - pass1_start)
+        try:
+            for frame in reader1:
+                if cancel_check and cancel_check():
+                    return {
+                        "input": str(in_path),
+                        "status": "cancelled",
+                        "cancelled": True,
+                        "elapsed_seconds": time.time() - start_time
+                    }
 
-        reader1.close()
+                # Filter detections by min_face_size
+                detections = self.detector.detect(frame)
+                valid_dets = [
+                    d for d in detections 
+                    if min(d.width, d.height) >= self.config.model.min_face_size
+                ]
+                tracker.update(frame_idx, frame, valid_dets)
+
+                # Send preview frame in Pass 1 (every 2nd frame) with bounding boxes
+                if preview_callback and (frame_idx % 2 == 0):
+                    disp_frame = frame.copy()
+                    for d in valid_dets:
+                        x1, y1, x2, y2 = int(d.x1), int(d.y1), int(d.x2), int(d.y2)
+                        cv2.rectangle(disp_frame, (x1, y1), (x2, y2), (0, 230, 118), 2)
+                        conf_text = f"{d.score:.2f}"
+                        cv2.putText(disp_frame, conf_text, (x1, max(20, y1 - 6)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 230, 118), 2)
+                    try:
+                        tot_str = str(info.total_frames) if info.total_frames else "?"
+                        preview_callback(disp_frame, f"Pass 1/2: Detection ({frame_idx + 1}/{tot_str})")
+                    except TypeError:
+                        preview_callback(disp_frame)
+
+                frame_idx += 1
+                if progress_callback:
+                    progress_callback("Detection", frame_idx, info.total_frames or frame_idx, time.time() - pass1_start)
+        finally:
+            reader1.close()
+
         total_frames = frame_idx
         print(f"Pass 1 complete. Total frames: {total_frames}. Establishing tracklets...")
 
@@ -122,28 +150,49 @@ class ProcessingPipeline:
             preserve_color_tags=self.config.output.preserve_color_tags
         )
 
-        reader2 = VideoReader(str(in_path))
+        reader2 = PrefetchedVideoReader(str(in_path))
         pass2_start = time.time()
         
         mae_samples = []
         delta_e_samples = []
         
-        for f_idx, frame in enumerate(reader2):
-            bboxes = frame_bboxes_map.get(f_idx, [])
-            blurred_frame, mask = self.blurrer.apply_blur(frame, bboxes)
-            writer.write_frame(blurred_frame)
-            
-            # Sample color difference on 5% of frames
-            if f_idx % max(1, total_frames // 20) == 0:
-                diff_metrics = compute_color_difference(frame, blurred_frame, mask)
-                mae_samples.append(diff_metrics["mae"])
-                delta_e_samples.append(diff_metrics["delta_e_approx"])
+        try:
+            for f_idx, frame in enumerate(reader2):
+                if cancel_check and cancel_check():
+                    if out_path.exists():
+                        try:
+                            out_path.unlink()
+                        except Exception:
+                            pass
+                    return {
+                        "input": str(in_path),
+                        "status": "cancelled",
+                        "cancelled": True,
+                        "elapsed_seconds": time.time() - start_time
+                    }
 
-            if progress_callback:
-                progress_callback("Rendering", f_idx + 1, total_frames, time.time() - pass2_start)
+                bboxes = frame_bboxes_map.get(f_idx, [])
+                blurred_frame, mask = self.blurrer.apply_blur(frame, bboxes)
+                writer.write_frame(blurred_frame)
+                
+                # Send preview frame (throttled to every 2nd frame)
+                if preview_callback and (f_idx % 2 == 0):
+                    try:
+                        preview_callback(blurred_frame, f"Pass 2/2: Mosaic ({f_idx + 1}/{total_frames})")
+                    except TypeError:
+                        preview_callback(blurred_frame)
 
-        reader2.close()
-        writer.close()
+                # Sample color difference on 5% of frames
+                if f_idx % max(1, total_frames // 20) == 0:
+                    diff_metrics = compute_color_difference(frame, blurred_frame, mask)
+                    mae_samples.append(diff_metrics["mae"])
+                    delta_e_samples.append(diff_metrics["delta_e_approx"])
+
+                if progress_callback:
+                    progress_callback("Rendering", f_idx + 1, total_frames, time.time() - pass2_start)
+        finally:
+            reader2.close()
+            writer.close()
 
         total_elapsed = time.time() - start_time
         fps_proc = total_frames / total_elapsed if total_elapsed > 0 else 0.0

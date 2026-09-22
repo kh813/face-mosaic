@@ -18,17 +18,17 @@ class ModelConfig:
 @dataclass
 class TrackingConfig:
     iou_threshold: float = 0.3
-    max_missing_frames: int = 5
-    padding_backward: int = 3
-    padding_forward: int = 3
+    max_missing_frames: int = 8
+    padding_backward: int = 8
+    padding_forward: int = 8
 
 @dataclass
 class BlurConfig:
     type: str = "gaussian"  # "gaussian" or "mosaic"
     strength: int = 31      # Gaussian blur kernel size (odd)
     mosaic_block_size: int = 16
-    margin_x: float = 0.2
-    margin_y: float = 0.2
+    margin_x: float = 0.35
+    margin_y: float = 0.35
 
 @dataclass
 class AnimalFilterConfig:
