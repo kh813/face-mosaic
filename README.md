@@ -116,10 +116,10 @@ python -m face_mosaic.cli video.mp4 --config configs/config.default.yaml
 | `--config, -c` | 設定ファイル（YAML）のパス | `configs/config.default.yaml` |
 | `--model, -m` | 使用するSCRFDモデル名 | `scrfd_10g_bnkps.onnx` |
 | `--blur-type, -b` | ぼかし方式 (`gaussian` または `mosaic`) | `gaussian` |
-| `--strength, -s` | ぼかし強度（奇数整数）またはモザイクブロックサイズ | `31` / `16` |
+| `--strength, -s` | ぼかし強度（奇数整数）またはモザイクブロックサイズ | `51` / `28` |
 | `--conf` | 顔検出の信頼度閾値 (0.0〜1.0) | `0.5` |
-| `--pad-back` | 顔検出前のぼかし延長フレーム数 (N) | `3` |
-| `--pad-fwd` | 顔検出後のぼかし延長フレーム数 (M) | `3` |
+| `--pad-back` | 顔検出前のぼかし延長フレーム数 (N)（事前モザイク） | `12` |
+| `--pad-fwd` | 顔検出後のぼかし延長フレーム数 (M) | `8` |
 | `--codec` | 出力動画コーデック (`hevc` または `h264`) | `hevc` |
 | `--crf` | CRF品質パラメータ（数値が小さいほど高画質） | `18` |
 | `--output-dir, -o` | 出力フォルダ（省略時は入力と同じフォルダ） | `""` |

@@ -23,7 +23,7 @@ def test_gui_window_initialization(qapp):
     window = MainWindow()
     assert window.windowTitle() == "face-mosaic: Automated Face Blur Tool"
     assert window.combo_model.count() >= 3
-    assert window.spin_pad_back.value() == 8
+    assert window.spin_pad_back.value() == 12
     assert window.spin_pad_fwd.value() == 8
     assert window.spin_crf.value() == 18
     assert not window.windowIcon().isNull()

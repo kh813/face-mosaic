@@ -12,16 +12,16 @@ model:
 tracking:
   iou_threshold: 0.3             # IoU threshold for matching face tracklets
   max_missing_frames: 8          # Number of missing frames before track is dropped
-  padding_backward: 8            # Number of frames to extend blur backward (N)
+  padding_backward: 12           # Number of frames to extend blur backward (N)
   padding_forward: 8             # Number of frames to extend blur forward (M)
 
 # Blur & mosaic effect settings
 blur:
   type: "gaussian"               # Options: "gaussian" or "mosaic"
-  strength: 31                   # Gaussian blur kernel size (odd integer, e.g. 31, 51) or sigma
-  mosaic_block_size: 16          # Mosaic block size in pixels (if type == "mosaic")
-  margin_x: 0.35                 # Horizontal expansion ratio of bounding box (e.g. 0.35 = 35% on each side)
-  margin_y: 0.35                 # Vertical expansion ratio of bounding box
+  strength: 51                   # Gaussian blur kernel size (odd integer, e.g. 51) or sigma
+  mosaic_block_size: 28          # Mosaic block size in pixels (if type == "mosaic")
+  margin_x: 0.50                 # Horizontal expansion ratio of bounding box (e.g. 0.50 = 50% on each side)
+  margin_y: 0.50                 # Vertical expansion ratio of bounding box
 
 # False positive reduction filters
 filters:

@@ -8,7 +8,7 @@ def test_default_config():
     config = AppConfig()
     assert config.model.name == "scrfd_10g_bnkps.onnx"
     assert config.blur.type == "gaussian"
-    assert config.tracking.padding_backward == 8
+    assert config.tracking.padding_backward == 12
     assert config.tracking.padding_forward == 8
     assert config.output.codec == "hevc"
     assert config.output.crf == 18

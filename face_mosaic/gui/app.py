@@ -517,9 +517,9 @@ class MainWindow(QMainWindow):
         self._lbl_strength_info = _make_info(
             "<b>ぼかし強度</b><br>"
             "Gaussian モード時: カーネルサイズ（奇数）。大きいほど強くぼかします。<br>"
-            "　推奨: 31〜51 / 最大: 199<br><br>"
-            "Mosaic モード時: ブロックサイズ（ピクセル）。大きいほどモザイクが粗くなります。<br>"
-            "　推奨: 12〜20 / 大きめ粗め: 32〜"
+            "　推奨: 51〜99 / デフォルト: 51<br><br>"
+            "Mosaic モード時: ブロックサイズ（ピクセル）。大きいほどモザイクが粗く強力になります。<br>"
+            "　推奨: 24〜36（判別不能）/ デフォルト: 28"
         )
         _row1_left = QHBoxLayout()
         _row1_left.setContentsMargins(0, 0, 0, 0)
@@ -532,7 +532,7 @@ class MainWindow(QMainWindow):
         self.spin_strength = QSpinBox()
         self.spin_strength.setRange(3, 199)
         self.spin_strength.setSingleStep(2)
-        self.spin_strength.setValue(31)
+        self.spin_strength.setValue(51)
         grid.addWidget(self.spin_strength, 1, 1)
 
         grid.addLayout(_label_with_info(
@@ -555,15 +555,15 @@ class MainWindow(QMainWindow):
             "Pad Backward (frames):",
             "<b>後方パディング (Pad Backward)</b><br>"
             "顔が最初に検出されたフレームより何フレーム前からモザイクを適用するか。<br><br>"
-            "歩行中の人物は顔検出される前から映り込む場合があります。<br>"
-            "この値を増やすことで、検出前のフレームもモザイク範囲に含めます。<br><br>"
-            "<b>推奨: 6〜10フレーム</b> (30fps の場合 ≈ 0.2〜0.3秒分)<br>"
-            "デフォルト: 8フレーム"
+            "正面から歩いてくる人物は顔検出される前から映り込みます。<br>"
+            "この値を増やすことで、遠方から接近する人物の顔もしっかり先行モザイクできます。<br><br>"
+            "<b>推奨: 10〜16フレーム</b> (60fps の場合 ≈ 0.17〜0.27秒分)<br>"
+            "デフォルト: 12フレーム"
         ), 2, 0)
 
         self.spin_pad_back = QSpinBox()
-        self.spin_pad_back.setRange(0, 30)
-        self.spin_pad_back.setValue(8)
+        self.spin_pad_back.setRange(0, 60)
+        self.spin_pad_back.setValue(12)
         grid.addWidget(self.spin_pad_back, 2, 1)
 
         grid.addLayout(_label_with_info(
@@ -620,17 +620,17 @@ class MainWindow(QMainWindow):
             "Face Margin (%):",
             "<b>顔マージン (Face Margin)</b><br>"
             "顔の検出バウンディングボックスを周囲に何%拡大してモザイク処理するか。<br><br>"
-            "値が大きいほど顔の周囲も広くぼかされます。<br><br>"
-            "<b>10〜20%:</b> 顔ギリギリ。自然なぼかし。<br>"
-            "<b>30〜40%:</b> 標準。顔全体+髪・耳周辺もカバー ★推奨<br>"
-            "<b>50%〜:</b> 広い範囲をぼかす。人物の体の一部も含まれる場合あり。<br><br>"
-            "デフォルト: 35%"
+            "値が大きいほど顔の周囲も広くぼかされ、輪郭や髪型からの特定を防ぎます。<br><br>"
+            "<b>10〜20%:</b> 顔ギリギリ。<br>"
+            "<b>30〜40%:</b> 標準。<br>"
+            "<b>50%〜:</b> 顔全体・頭部・顎下・髪型まで完全カバー ★推奨<br><br>"
+            "デフォルト: 50%"
         ), 4, 0)
 
         self.spin_margin = QSpinBox()
         self.spin_margin.setRange(0, 100)
         self.spin_margin.setSingleStep(5)
-        self.spin_margin.setValue(35)
+        self.spin_margin.setValue(50)
         grid.addWidget(self.spin_margin, 4, 1)
 
         left_layout.addWidget(param_group)
@@ -723,10 +723,10 @@ class MainWindow(QMainWindow):
     def _on_blur_type_changed(self, text: str):
         if text.lower() == "mosaic":
             self.lbl_strength.setText("Mosaic Block Size:")
-            self.spin_strength.setValue(16)
+            self.spin_strength.setValue(28)
         else:
             self.lbl_strength.setText("Blur Strength (odd):")
-            self.spin_strength.setValue(31)
+            self.spin_strength.setValue(51)
 
     def _select_files(self):
         start_dir = self.last_open_dir

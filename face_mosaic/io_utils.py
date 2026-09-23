@@ -402,6 +402,7 @@ class VideoWriter:
             else:
                 c.extend(["-map", "0:v:0"])
             c.extend(enc_args)
+            c.extend(["-r", f"{fps:.4f}"])
             if preserve_color_tags and input_info.color_metadata:
                 c.extend(input_info.color_metadata.to_ffmpeg_args())
                 if is_hevc:

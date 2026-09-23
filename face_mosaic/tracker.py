@@ -65,7 +65,7 @@ class FaceTracker:
         self,
         iou_threshold: float = 0.3,
         max_missing_frames: int = 8,
-        padding_backward: int = 8,
+        padding_backward: int = 12,
         padding_forward: int = 8,
         filters_config: Optional[FiltersConfig] = None
     ):

@@ -16,7 +16,7 @@ def test_gaussian_and_mosaic_blur():
     blurrer_g = FaceBlurrer(blur_type="gaussian", strength=31)
     blurrer_m = FaceBlurrer(blur_type="mosaic", mosaic_block_size=10)
     
-    img = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)
+    img = np.random.randint(0, 255, (300, 300, 3), dtype=np.uint8)
     bboxes = [np.array([50, 50, 150, 150])]
 
     g_out, g_mask = blurrer_g.apply_blur(img, bboxes)
