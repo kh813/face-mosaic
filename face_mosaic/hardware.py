@@ -20,6 +20,7 @@ class HardwareProfile:
     is_high_spec: bool
     recommended_model: str
     reason: str
+    hardware_vendor: str = "generic"
 
 def get_cpu_name() -> str:
     """Get human-readable CPU model string."""
@@ -91,37 +92,83 @@ def get_available_gpu_providers() -> List[str]:
         pass
     return providers
 
+def get_hardware_vendor() -> str:
+    """
+    Detect hardware vendor / architecture family.
+    Returns: 'apple_silicon', 'amd_ryzen', 'intel', or 'generic'
+    """
+    if sys.platform == "darwin":
+        machine = platform.machine().lower()
+        if "arm" in machine or "aarch64" in machine:
+            return "apple_silicon"
+        cpu = get_cpu_name().lower()
+        if "apple" in cpu:
+            return "apple_silicon"
+
+    cpu = get_cpu_name().lower()
+    if "amd" in cpu or "ryzen" in cpu:
+        return "amd_ryzen"
+    elif "intel" in cpu or "core" in cpu:
+        return "intel"
+    return "generic"
+
 def detect_hardware_profile() -> HardwareProfile:
     """
     Analyze system specs and determine the optimal SCRFD model.
-    Criteria:
-    - High-spec: GPU acceleration available (DirectML / CoreML / CUDA) AND (RAM >= 15GB OR Cores >= 8)
-      -> scrfd_34g_gnkps.onnx (Maximum Accuracy)
-    - Mid-spec: GPU acceleration available OR (RAM >= 12GB AND Cores >= 6)
-      -> scrfd_10g_bnkps.onnx (Balanced Default)
-    - Low-spec: CPU-only and (RAM < 8GB OR Cores <= 4)
-      -> scrfd_2.5g_bnkps.onnx (Fastest)
+    Branch logic tailored per hardware family:
+    - Apple Silicon (M-Series): Unified Memory + CoreML (Neural Engine / GPU)
+    - AMD Ryzen: Multi-core AVX2/AVX-512 + DirectML / AMF
+    - Intel Core / Arc: OpenVINO (GPU/NPU) + QSV (preserved)
+    - Generic / Fallback
     """
     cpu = get_cpu_name()
     cores = os.cpu_count() or 4
     ram = get_total_ram_gb()
     gpus = get_available_gpu_providers()
+    vendor = get_hardware_vendor()
 
     has_gpu = len(gpus) > 0
 
-    if has_gpu and (ram >= 15.0 or cores >= 8):
-        rec_model = "scrfd_34g_gnkps.onnx"
-        provider_name = gpus[0].replace("ExecutionProvider", "")
-        reason = f"High-performance system detected ({cpu}, {ram:.1f}GB RAM, {provider_name} GPU). Auto-selected 34G (High Accuracy)."
-        is_high = True
-    elif has_gpu or (ram >= 12.0 and cores >= 6):
-        rec_model = "scrfd_10g_bnkps.onnx"
-        reason = f"Mid-range system detected ({cpu}, {ram:.1f}GB RAM). Auto-selected 10G (Balanced Default)."
-        is_high = False
+    if vendor == "apple_silicon":
+        # Apple Silicon unified memory model
+        if ram >= 15.0 or cores >= 8:
+            rec_model = "scrfd_34g_gnkps.onnx"
+            reason = f"Apple Silicon high-spec detected ({cpu}, {ram:.1f}GB Unified Memory, CoreML & VideoToolbox enabled). Auto-selected 34G (High Accuracy)."
+            is_high = True
+        else:
+            rec_model = "scrfd_10g_bnkps.onnx"
+            reason = f"Apple Silicon detected ({cpu}, {ram:.1f}GB Unified Memory, CoreML & VideoToolbox enabled). Auto-selected 10G (Balanced Default)."
+            is_high = False
+    elif vendor == "amd_ryzen":
+        # AMD Ryzen with multi-core / Radeon GPU (DirectML)
+        if has_gpu and (ram >= 15.0 or cores >= 8):
+            rec_model = "scrfd_34g_gnkps.onnx"
+            provider_name = gpus[0].replace("ExecutionProvider", "")
+            reason = f"AMD Ryzen high-performance system detected ({cpu}, {cores} cores, {ram:.1f}GB RAM, {provider_name} GPU). Auto-selected 34G (High Accuracy)."
+            is_high = True
+        elif has_gpu or (ram >= 12.0 and cores >= 6):
+            rec_model = "scrfd_10g_bnkps.onnx"
+            reason = f"AMD Ryzen system detected ({cpu}, {cores} cores, {ram:.1f}GB RAM). Auto-selected 10G (Balanced Default)."
+            is_high = False
+        else:
+            rec_model = "scrfd_2.5g_bnkps.onnx"
+            reason = f"AMD Ryzen system ({cpu}, {ram:.1f}GB RAM). Auto-selected 2.5G (Fast)."
+            is_high = False
     else:
-        rec_model = "scrfd_2.5g_bnkps.onnx"
-        reason = f"Resource-constrained environment ({cpu}, {ram:.1f}GB RAM, CPU-only). Auto-selected 2.5G (Fast)."
-        is_high = False
+        # Intel Core / Arc or Generic: Preserve existing logic exactly
+        if has_gpu and (ram >= 15.0 or cores >= 8):
+            rec_model = "scrfd_34g_gnkps.onnx"
+            provider_name = gpus[0].replace("ExecutionProvider", "")
+            reason = f"High-performance system detected ({cpu}, {ram:.1f}GB RAM, {provider_name} GPU). Auto-selected 34G (High Accuracy)."
+            is_high = True
+        elif has_gpu or (ram >= 12.0 and cores >= 6):
+            rec_model = "scrfd_10g_bnkps.onnx"
+            reason = f"Mid-range system detected ({cpu}, {ram:.1f}GB RAM). Auto-selected 10G (Balanced Default)."
+            is_high = False
+        else:
+            rec_model = "scrfd_2.5g_bnkps.onnx"
+            reason = f"Resource-constrained environment ({cpu}, {ram:.1f}GB RAM, CPU-only). Auto-selected 2.5G (Fast)."
+            is_high = False
 
     return HardwareProfile(
         cpu_name=cpu,
@@ -130,5 +177,7 @@ def detect_hardware_profile() -> HardwareProfile:
         gpu_providers=gpus,
         is_high_spec=is_high,
         recommended_model=rec_model,
-        reason=reason
+        reason=reason,
+        hardware_vendor=vendor
     )
+

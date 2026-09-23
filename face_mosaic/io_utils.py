@@ -33,13 +33,13 @@ def get_subprocess_kwargs() -> Dict[str, Any]:
         kwargs["startupinfo"] = si
     return kwargs
 
-_qsv_supported: Optional[bool] = None
+_supported_encoders: Optional[set] = None
 
-def supports_qsv() -> bool:
-    """Check if Intel Quick Sync Video (QSV) is supported by ffmpeg."""
-    global _qsv_supported
-    if _qsv_supported is not None:
-        return _qsv_supported
+def get_supported_encoders() -> set:
+    """Query available ffmpeg encoders once and cache."""
+    global _supported_encoders
+    if _supported_encoders is not None:
+        return _supported_encoders
     try:
         ffmpeg_bin = get_ffmpeg_cmd()
         res = subprocess.run(
@@ -51,10 +51,30 @@ def supports_qsv() -> bool:
             errors="replace",
             **get_subprocess_kwargs()
         )
-        _qsv_supported = "hevc_qsv" in res.stdout
+        _supported_encoders = set()
+        for line in res.stdout.splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 2 and parts[0].startswith("V"):
+                _supported_encoders.add(parts[1])
     except Exception:
-        _qsv_supported = False
-    return _qsv_supported
+        _supported_encoders = set()
+    return _supported_encoders
+
+def supports_qsv() -> bool:
+    """Check if Intel Quick Sync Video (QSV) is supported by ffmpeg."""
+    return "hevc_qsv" in get_supported_encoders()
+
+def supports_videotoolbox() -> bool:
+    """Check if Apple VideoToolbox (Apple Silicon / Mac) is supported by ffmpeg."""
+    return "hevc_videotoolbox" in get_supported_encoders()
+
+def supports_amf() -> bool:
+    """Check if AMD Advanced Media Framework (AMF / Ryzen APU & Radeon) is supported by ffmpeg."""
+    return "hevc_amf" in get_supported_encoders()
+
+def supports_nvenc() -> bool:
+    """Check if NVIDIA NVENC is supported by ffmpeg."""
+    return "hevc_nvenc" in get_supported_encoders()
 
 def get_ffprobe_cmd() -> str:
     path = shutil.which("ffprobe")
@@ -245,8 +265,11 @@ class VideoReader:
 
     def __iter__(self) -> Generator[np.ndarray, None, None]:
         if self.cap is not None:
-            while True:
-                ret, frame = self.cap.read()
+            while self.cap is not None and self.cap.isOpened():
+                try:
+                    ret, frame = self.cap.read()
+                except Exception:
+                    break
                 if not ret or frame is None:
                     break
                 yield frame
@@ -327,12 +350,15 @@ class PrefetchedVideoReader:
 
     def close(self):
         self.stop_event.set()
-        self.reader.close()
+        # Unblock worker thread if it is waiting on queue.put
         while not self.queue.empty():
             try:
                 self.queue.get_nowait()
             except queue.Empty:
                 break
+        if self.worker.is_alive():
+            self.worker.join(timeout=1.0)
+        self.reader.close()
 
 class VideoWriter:
     """
@@ -373,19 +399,46 @@ class VideoWriter:
 
         ffmpeg_bin = get_ffmpeg_cmd()
 
-        def build_cmd(use_qsv: bool):
+        def build_cmd(hw_mode: str):
+            """
+            hw_mode options:
+             - 'videotoolbox': Apple Silicon / macOS hardware encoder
+             - 'qsv': Intel Quick Sync Video (Intel Arc / Core Ultra)
+             - 'amf': AMD Advanced Media Framework (Ryzen APU / Radeon)
+             - 'nvenc': NVIDIA NVENC
+             - 'cpu': libx265 / libx264 software encoder (multi-threaded)
+            """
             is_10bit = bool(input_info.color_metadata and input_info.color_metadata.pix_fmt in ("yuv420p10le", "p010le", "p010"))
             is_hevc = codec.lower() in ("hevc", "h265", "x265")
 
-            if use_qsv:
+            if hw_mode == "videotoolbox":
+                enc = "hevc_videotoolbox" if is_hevc else "h264_videotoolbox"
+                # VideoToolbox quality: scale 1-100 (65 is sweet spot corresponding to crf 18-20)
+                vt_q = str(max(40, min(90, 85 - (crf - 15) * 2)))
+                if is_10bit and is_hevc:
+                    pix = "p010le"
+                    enc_args = ["-c:v", enc, "-profile:v", "main10", "-q:v", vt_q, "-pix_fmt", pix]
+                else:
+                    pix = "nv12"
+                    enc_args = ["-c:v", enc, "-q:v", vt_q, "-pix_fmt", pix]
+            elif hw_mode == "qsv":
                 enc = "hevc_qsv" if is_hevc else "h264_qsv"
                 qsv_p = QSV_PRESET_MAP.get(preset.lower(), "medium")
                 pix = "p010le" if (is_10bit and is_hevc) else "nv12"
                 enc_args = ["-c:v", enc, "-global_quality", str(crf), "-preset", qsv_p, "-pix_fmt", pix]
+            elif hw_mode == "amf":
+                enc = "hevc_amf" if is_hevc else "h264_amf"
+                pix = "p010le" if (is_10bit and is_hevc) else "nv12"
+                enc_args = ["-c:v", enc, "-quality", "quality", "-rc", "cqp", "-qp_p", str(crf), "-qp_i", str(crf), "-pix_fmt", pix]
+            elif hw_mode == "nvenc":
+                enc = "hevc_nvenc" if is_hevc else "h264_nvenc"
+                pix = "p010le" if (is_10bit and is_hevc) else "nv12"
+                enc_args = ["-c:v", enc, "-preset", "p5", "-cq", str(crf), "-pix_fmt", pix]
             else:
+                # CPU software encode: heavily utilize multi-core threads (Ryzen, etc.)
                 enc = "libx265" if is_hevc else "libx264"
                 pix = "yuv420p10le" if (is_10bit and is_hevc) else "yuv420p"
-                enc_args = ["-c:v", enc, "-crf", str(crf), "-preset", preset, "-pix_fmt", pix]
+                enc_args = ["-c:v", enc, "-crf", str(crf), "-preset", preset, "-pix_fmt", pix, "-threads", "0"]
 
             c = [
                 ffmpeg_bin,
@@ -411,26 +464,41 @@ class VideoWriter:
             return c
 
         self.process = None
-        if use_hardware_accel and supports_qsv() and width >= 640 and height >= 480:
-            try:
-                cmd_qsv = build_cmd(use_qsv=True)
-                proc = subprocess.Popen(
-                    cmd_qsv,
-                    stdin=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    **get_subprocess_kwargs()
-                )
-                # Quick healthcheck
-                time.sleep(0.05)
-                if proc.poll() is None:
-                    self.process = proc
-                else:
-                    proc.wait()
-            except Exception:
-                pass
+        self.active_encoder = "cpu"
+
+        # Determine target hardware encoder based on platform and detected capability
+        if use_hardware_accel and width >= 640 and height >= 480:
+            target_hw = None
+            if sys.platform == "darwin" and supports_videotoolbox():
+                target_hw = "videotoolbox"
+            elif supports_qsv():
+                target_hw = "qsv"
+            elif supports_amf():
+                target_hw = "amf"
+            elif supports_nvenc():
+                target_hw = "nvenc"
+
+            if target_hw:
+                try:
+                    cmd_hw = build_cmd(hw_mode=target_hw)
+                    proc = subprocess.Popen(
+                        cmd_hw,
+                        stdin=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        **get_subprocess_kwargs()
+                    )
+                    # Quick healthcheck
+                    time.sleep(0.05)
+                    if proc.poll() is None:
+                        self.process = proc
+                        self.active_encoder = target_hw
+                    else:
+                        proc.wait()
+                except Exception:
+                    pass
 
         if self.process is None:
-            cmd_cpu = build_cmd(use_qsv=False)
+            cmd_cpu = build_cmd(hw_mode="cpu")
             try:
                 self.process = subprocess.Popen(
                     cmd_cpu,
@@ -438,6 +506,7 @@ class VideoWriter:
                     stderr=subprocess.PIPE,
                     **get_subprocess_kwargs()
                 )
+                self.active_encoder = "cpu"
             except FileNotFoundError:
                 raise RuntimeError(
                     f"ffmpeg executable not found ('{ffmpeg_bin}'). "

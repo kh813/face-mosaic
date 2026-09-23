@@ -458,3 +458,40 @@ PySide6（Qt for Python）を用いたデスクトップGUIを実装完了。
    - HEVC VUI メタデータ注入: `-bsf:v hevc_metadata` により、BT.2020 広色域（`colour_primaries=9`）、HLG 伝達特性（`transfer_characteristics=18`）、マトリックス係数（`matrix_coefficients=9`）、レンジ（`color_range=tv`）をビットストリームの NAL ユニット内部に直接埋め込み。
    - YouTube や QuickTime、各種プレイヤーでの再生時に元映像と 100% 同一の色味・トーン・コントラストを保証。
 
+---
+
+## 11. Phase 3.4 詳細仕様：ハードウェア自動検知とマルチベンダー最適化
+
+CPU、GPU、NPU アーキテクチャおよび RAM 容量を起動時に自動検知し、ハードウェア環境ごとに最適化された処理パイプラインへ自動分岐する。
+
+### 11.1 ハードウェア検知アーキテクチャ (`hardware.py`)
+- `get_hardware_vendor()`:
+  - `apple_silicon`: macOS かつ arm64 アーキテクチャ / Apple Mシリーズプロセッサ
+  - `amd_ryzen`: AMD Ryzen プロセッサ
+  - `intel`: Intel Core / Intel Core Ultra プロセッサ
+  - `generic`: その他一般的な x86_64 / ARM 環境
+
+### 11.2 Apple Silicon (M1/M2/M3/M4) 向け最適化
+1. **Pass 1 推論**:
+   - ONNX Runtime において `CoreMLExecutionProvider` を最優先ロード。
+   - Apple Neural Engine (ANE) および Metal GPU を利用して、低消費電力かつリアルタイム以上の高速推論を実行。
+2. **Pass 2 レンダリング（動画エンコード）**:
+   - macOS 専用ハードウェアエンコーダー **Apple VideoToolbox (`hevc_videotoolbox` / `h264_videotoolbox`)** を自動使用。
+   - 10-bit HDR / BT.2020 維持: `-profile:v main10 -pix_fmt p010le` または `yuv420p10le` を自動指定し、QuickTime Player での完全な色再現性を保証。
+   - 高効率・低発熱でバッテリー消費と CPU 負荷を最小化。
+
+### 11.3 AMD Ryzen / Radeon 向け最適化
+1. **Pass 1 推論**:
+   - AMD Radeon GPU（内蔵または外付け）環境では `DmlExecutionProvider` (DirectML) により GPU 推論を活用。
+   - CPU 実行時は、Zen アーキテクチャの強力な AVX2 / AVX-512 スループットを活かすため、`intra_op_num_threads` をマルチコア数に合わせて最適化。
+2. **Pass 2 レンダリング（動画エンコード）**:
+   - Radeon GPU 搭載時は **AMD AMF (`hevc_amf` / `h264_amf`)** を自動活用。
+   - CPU ソフトウェアエンコード時（`libx265`）は `-threads 0` を明示指定し、Ryzen のマルチコア・マルチスレッド（16〜32スレッド）をフル稼働。
+
+### 11.4 Intel Arc / Core Ultra 向け最適化（既存仕様完全維持）
+- Intel Core Ultra / Arc GPU 環境では、これまでの実装通り **OpenVINO (`MULTI:GPU,NPU`)** による 135〜155 FPS の超高速推論と **Intel QSV (`hevc_qsv`)** によるハードウェアエンコードを最優先で維持。
+
+### 11.5 安全なフォールバック機構
+- いずれのハードウェア環境においても、ハードウェアエンコーダーの初期化に失敗した場合は即座にマルチスレッド `libx265`（CPU）へ安全に自動フォールバックし、動画処理の中断を防ぐ。
+
+

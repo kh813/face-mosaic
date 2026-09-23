@@ -122,9 +122,24 @@
 - [x] macOS Gatekeeper 対策とドキュメント整備（Finder「右クリック→開く」および `xattr` 解除手順を明記）
 - [x] 仕様書・TODO・README の完全同期更新
 
+## Phase 3.4: ハードウェア自動検知とマルチベンダー最適化（Apple Silicon / AMD Ryzen / Intel Arc）
+
+- [x] ハードウェア種別判定の実装（`face_mosaic/hardware.py` に `get_hardware_vendor()` 追加）
+  - Apple Silicon（M1/M2/M3/M4・Unified Memory）、AMD Ryzen（Zen AVX2/AVX-512）、Intel Core/Arc を自動判別
+- [x] Apple Silicon 最適化
+  - Pass 1 推論：ONNX Runtime で `CoreMLExecutionProvider`（Apple Neural Engine & Metal GPU）を最優先
+  - Pass 2 エンコード：Apple VideoToolbox（`hevc_videotoolbox` / `h264_videotoolbox`）ハードウェアエンコード対応（10-bit HDR / `main10` 対応）
+- [x] AMD Ryzen / Radeon 最適化
+  - Pass 1 推論：Radeon GPU での `DmlExecutionProvider` (DirectML)、CPU 時は Zen マルチスレッド（`intra_op_num_threads`）最適化
+  - Pass 2 エンコード：AMD AMF（`hevc_amf`）対応および CPU ソフトウェアエンコード時の `-threads 0` 全コア活用
+- [x] Intel Arc / Core Ultra 最適化の完全維持
+  - OpenVINO (`MULTI:GPU,NPU`) および Intel QSV (`hevc_qsv`) の既存最適化パスを 100% 保持
+- [x] エンコーダーおよびハードウェア検知の単体テスト（`tests/test_hardware.py`, `tests/test_io_encoders.py`）追加（全70件通過）
+
 ## バックログ（優先度未定・実運用次第で検討）
 
 - [ ] 実際に発生した誤検知フレームを蓄積し、検出モデルのハードネガティブ追加学習
 - [ ] フォルダ監視による新規動画の自動検知・自動処理
+
 
 

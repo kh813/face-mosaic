@@ -246,13 +246,25 @@ python scripts/benchmark.py
 
 ---
 
-## 6. ハードウェアアクセラレーション (CPU / GPU / NPU) と高速化仕様
+## 6. ハードウェア自動検知と最適化仕様 (Intel Arc / Apple Silicon / AMD Ryzen)
 
-本ツールは、Windows・macOS双方のハードウェア性能（特に最新の Intel Core Ultra CPU / Intel Arc GPU / Intel AI Boost NPU）を限界まで引き出すハイブリッド高速化パイプラインを備えています。
+本ツールは起動時にマシンの CPU / GPU / NPU アーキテクチャおよび RAM 容量を自動診断し、それぞれのハードウェアに特化した推論アクセラレータおよびハードウェアエンコーダーへ自動分岐します。
 
-### 6.1 OpenVINO による GPU + NPU ハイブリッド推論 (Intel Core Ultra)
+### ハードウェア別 最適化マトリックス
+
+| ハードウェア環境 | Pass 1 顔検出推論 | Pass 2 レンダリング（動画エンコード） | 特徴・最適化内容 |
+|---|---|---|---|
+| **Intel Arc / Core Ultra** (Windows) | **OpenVINO (`MULTI:GPU,NPU`)** | **Intel QSV (`hevc_qsv` / `h264_qsv`)** | Arc GPU と AI Boost NPU の協調処理（約 135〜155 FPS）。メディアエンジンによる 4K60fps 爆速書き出し。 |
+| **Apple Silicon (M1/M2/M3/M4)** (macOS) | **CoreML (`CoreMLExecutionProvider`)** | **Apple VideoToolbox (`hevc_videotoolbox`)** | Apple Neural Engine (ANE) & Metal GPU 推論。Mac 専用メディアエンジンによる高速・超低発熱エンコード（10-bit HDR 対応）。 |
+| **AMD Ryzen / Radeon** (Windows/Linux) | **DirectML (Radeon) / AVX2・AVX-512** | **AMD AMF (`hevc_amf`) / `-threads 0`** | Radeon GPU での DirectML 推論。CPU 時は Zen アーキテクチャのマルチスレッド（16〜32スレッド）をフル活用。 |
+| **汎用 CPU / NVIDIA GPU** | **CUDA / CPUExecutionProvider** | **NVENC (`hevc_nvenc`) / `libx265`** | NVIDIA GPU 時は NVENC、CPU 時はマルチスレッド並列処理で安全にフォールバック。 |
+
+---
+
+### 6.1 Intel Arc / Core Ultra での最適化 (既存仕様完全維持)
 
 Windows（Intel Core Ultra 環境）では、ネイティブ OpenVINO ランタイムを通じて **Intel Arc GPU と Intel AI Boost NPU の協調処理 (`MULTI:GPU,NPU`)** を自動活用します。
+また、動画書き出しには **Intel Quick Sync Video (`hevc_qsv`)** を使用します。
 
 - **実機での推論ベンチマーク性能（Intel Core Ultra 5 225H / Arc 130T GPU）**:
   - **OpenVINO GPU / NPU 推論**: **約 135〜155 FPS**（4K 60fps 動画の推論速度を 2.5倍以上上回るリアルタイム超高速処理）

@@ -4,6 +4,8 @@ Supports arbitrary input sizes (or scaled 640x640), 2.5G/10G/34G models,
 and returns bboxes, confidence scores, and 5-point facial landmarks.
 """
 
+import os
+import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Tuple, Optional
@@ -98,23 +100,44 @@ class SCRFDDetector(BaseFaceDetector):
         except Exception:
             self.ov_compiled = None
 
-        # 2. Fallback to ONNX Runtime (DirectML / CoreML / CUDA / CPU)
+        # 2. Fallback to ONNX Runtime (CoreML / DirectML / CUDA / OpenVINO / CPU)
         if self.ov_compiled is None:
             if providers is None:
                 available = ort.get_available_providers()
                 providers = []
+                # Apple Silicon: CoreML is primary (Neural Engine & GPU)
                 if "CoreMLExecutionProvider" in available:
                     providers.append("CoreMLExecutionProvider")
-                if "OpenVINOExecutionProvider" in available:
-                    providers.append("OpenVINOExecutionProvider")
+                # DirectML (AMD Radeon / Intel / NVIDIA on Windows)
                 if "DmlExecutionProvider" in available:
                     providers.append("DmlExecutionProvider")
+                if "CUDAExecutionProvider" in available:
+                    providers.append("CUDAExecutionProvider")
+                if "OpenVINOExecutionProvider" in available:
+                    providers.append("OpenVINOExecutionProvider")
                 providers.append("CPUExecutionProvider")
 
             sess_options = ort.SessionOptions()
             sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            # Multi-core CPU tuning (Ryzen AVX2/AVX-512, Intel, Apple NEON)
+            cpu_threads = min(os.cpu_count() or 4, 8)
+            sess_options.intra_op_num_threads = cpu_threads
+
             self.session = ort.InferenceSession(str(self.model_path), sess_options=sess_options, providers=providers)
-            self.active_provider = self.session.get_providers()[0] if self.session.get_providers() else "Unknown"
+            active = self.session.get_providers()[0] if self.session.get_providers() else "Unknown"
+
+            if "CoreML" in active:
+                self.active_provider = "CoreML (Apple Silicon ANE & GPU)"
+            elif "Dml" in active:
+                self.active_provider = "DirectML (GPU Acceleration)"
+            elif "CUDA" in active:
+                self.active_provider = "CUDA (NVIDIA GPU)"
+            elif "CPU" in active:
+                self.active_provider = f"CPU Execution ({cpu_threads} threads, AVX/NEON)"
+            else:
+                self.active_provider = active
+
+            print(f"[Hardware Acceleration] Active: {self.active_provider}")
             self.input_name = self.session.get_inputs()[0].name
             self.output_names = [o.name for o in self.session.get_outputs()]
         
