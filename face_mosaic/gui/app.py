@@ -703,10 +703,13 @@ class MainWindow(QMainWindow):
         log_layout = QVBoxLayout(log_group)
 
         log_btn_layout = QHBoxLayout()
+        self.btn_disclaimer = QPushButton("⚖ 免責事項 (Disclaimer)")
+        self.btn_disclaimer.clicked.connect(self._show_disclaimer)
         self.btn_copy_log = QPushButton("📋 Copy Log")
         self.btn_copy_log.clicked.connect(self._copy_log)
         self.btn_open_log = QPushButton("📁 Open Log File")
         self.btn_open_log.clicked.connect(self._open_log_file)
+        log_btn_layout.addWidget(self.btn_disclaimer)
         log_btn_layout.addStretch()
         log_btn_layout.addWidget(self.btn_copy_log)
         log_btn_layout.addWidget(self.btn_open_log)
@@ -718,6 +721,13 @@ class MainWindow(QMainWindow):
         log_layout.addWidget(self.txt_log)
 
         right_layout.addWidget(log_group, stretch=1)
+
+        # Subtle footer disclaimer banner
+        lbl_footer_disclaimer = QLabel("⚠️ 本ツールは顔検出・モザイクの自動化補助ツールです。公開前に必ず目視確認を行ってください。(Apache-2.0)")
+        lbl_footer_disclaimer.setStyleSheet("color: #8E8E93; font-size: 10px; margin-top: 2px;")
+        lbl_footer_disclaimer.setAlignment(Qt.AlignCenter)
+        right_layout.addWidget(lbl_footer_disclaimer)
+
         main_layout.addWidget(right_panel, stretch=6)
 
     def _on_blur_type_changed(self, text: str):
@@ -1415,6 +1425,23 @@ class MainWindow(QMainWindow):
         if not log_file.exists():
             log_file.touch()
         self._open_path(str(log_file))
+
+    def _show_disclaimer(self):
+        title = "利用規約・免責事項 (Disclaimer & License)"
+        text = (
+            "<h3>face-mosaic 利用規約・免責事項</h3>"
+            "<p><b>【ライセンス】</b><br>"
+            "本ソフトウェアは <b>Apache License, Version 2.0</b> に基づき提供されます。</p>"
+            "<p><b>【目視による最終確認の義務】</b><br>"
+            "本ツールはAI（コンピュータビジョン）を用いて顔検出およびモザイク／ぼかし処理を補助するツールです。"
+            "カメラアングル、被写体の動き、遮蔽物、極端な照明等の要因により、検出漏れが発生する可能性を技術的に100%排除することはできません。<br><br>"
+            "処理後の動画をYouTubeやSNS等の公の場へ公開・共有する前に、<b>必ず利用者の自己責任において全編の目視確認を行い、必要に応じて手動での追加修正を行ってください。</b></p>"
+            "<p><b>【保証の否認・責任の制限】</b><br>"
+            "本ソフトウェアは「現状有姿 (AS IS)」で提供され、いかなる明示的・黙示的保証も行いません。"
+            "本ツールの利用、誤動作、検出漏れ等に起因して生じたいかなる損害（肖像権侵害、プライバシー侵害、名誉毀損、第三者との紛争、営業上の損失等）"
+            "についても、開発者およびコントリビューターは一切の責任を負いません。</p>"
+        )
+        QMessageBox.information(self, title, text)
 
 
 def run_app():

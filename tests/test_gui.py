@@ -424,6 +424,18 @@ def test_gui_copy_log_button(qapp):
     mock_clipboard.setText.assert_called_once_with("Test Diagnostic Log Output 12345")
 
 
+def test_gui_disclaimer_button(qapp):
+    from unittest.mock import patch
+    window = MainWindow()
+    with patch("PySide6.QtWidgets.QMessageBox.information") as mock_info:
+        window.btn_disclaimer.click()
+        assert mock_info.called
+        title, text = mock_info.call_args[0][1], mock_info.call_args[0][2]
+        assert "免責事項" in title
+        assert "Apache License, Version 2.0" in text
+        assert "目視" in text
+
+
 def test_gui_context_menu_actions(qapp, tmp_path):
     from unittest.mock import patch
     from PySide6.QtCore import QPoint
