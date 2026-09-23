@@ -111,8 +111,20 @@
 - [x] 10-bit HDR / BT.2020 色再現性の完全保証（10-bit `p010le` 自動適用、`-bsf:v hevc_metadata` による VUI ビットストリーム注入、色味変化の完全防止）
 - [x] 単体・結合テストの追加・更新（チェックポイント、ライフサイクル、レジューム、メモリ分離、GUIログコピー、VUI BSFタグ等 全63件テスト通過）
 
+## Phase 3.3: マルチプラットフォーム（Windows/macOS）リリース自動化・配布ZIPパッケージ整備
+
+- [x] Windows 向け起動バッチのリネームと整理（`start-app.bat` 新設、初回進捗表示 / 2回目以降サイレント起動、`run.bat` 互換転送）
+- [x] macOS 向けワンクリックランナーの実装（`start-app.command` および `scripts/setup_and_run_mac.sh`、Python3/venv/ffmpeg自動検証、モデルダウンロードからGUI起動まで自動化）
+- [x] GitHub Actions リリースワークフロー（`.github/workflows/release.yml`）の刷新
+  - Windows用ジョブ（`package-windows`）：Windows専用ファイルのみをステージングして `face-mosaic-windows.zip` 生成
+  - macOS用ジョブ（`package-macos`）：macOS専用ファイルのみをステージング、`chmod +x` で実行権限を保持したまま `face-mosaic-macos.zip` 生成
+  - タグpush時の GitHub Releases 自動アタッチおよびワークフロー成果物アップロード
+- [x] macOS Gatekeeper 対策とドキュメント整備（Finder「右クリック→開く」および `xattr` 解除手順を明記）
+- [x] 仕様書・TODO・README の完全同期更新
+
 ## バックログ（優先度未定・実運用次第で検討）
 
 - [ ] 実際に発生した誤検知フレームを蓄積し、検出モデルのハードネガティブ追加学習
 - [ ] フォルダ監視による新規動画の自動検知・自動処理
+
 

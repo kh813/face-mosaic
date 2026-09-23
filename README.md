@@ -25,12 +25,14 @@
 
 ### 2.1 Windows の場合（ワンクリック自動セットアップ推奨）
 
-Windows環境では、`run.bat` を実行するだけで、**Python環境（未導入時はポータブル版Python）、仮想環境（venv）、FFmpeg、SCRFD顔検出モデルのダウンロードからGUI起動まで全自動**で行われます。
+Windows環境では、配布ZIPを展開して `start-app.bat` をダブルクリックするだけで、**Python環境（未導入時はポータブル版Python）、仮想環境（venv）、FFmpeg、SCRFD顔検出モデルのダウンロードからGUI起動まで全自動**で行われます。
+初回実行時はセットアップ進捗が画面に表示され、2回目以降はバックグラウンドで即座にGUIが起動します。
 
 ```cmd
 # リポジトリ直下のバッチファイルをダブルクリックまたはコマンドラインから実行
-run.bat
+start-app.bat
 ```
+*(従来の `run.bat` も互換性のため同梱されており、同様に実行可能です)*
 
 手動で構築する場合：
 ```powershell
@@ -41,9 +43,19 @@ pip install -r requirements/requirements-windows.txt
 python scripts/download_models.py
 ```
 
-### 2.2 macOS の場合
+### 2.2 macOS の場合（ワンクリック自動セットアップ推奨）
 
-#### リポジトリの準備・仮想環境構築
+macOS環境では、配布ZIPを展開して `start-app.command` をダブルクリックするだけで、**Python環境チェック、仮想環境（venv）、FFmpegチェック、SCRFD顔検出モデルのダウンロードからGUI起動まで全自動**で行われます。
+*(詳細は後述の「4. Gatekeeper警告の回避方法 (Mac版)」をご確認ください)*
+
+```bash
+# ターミナルから直接実行する場合
+./start-app.command
+# または
+bash start-app.command
+```
+
+手動で構築する場合：
 
 ```bash
 git clone https://github.com/your-username/face-mosaic.git
@@ -127,10 +139,13 @@ python -m face_mosaic.cli video.mp4 --config configs/config.default.yaml
 
 ### 3.4 GUIモード（デスクトップUI）
 
-Windows環境では `run.bat` をダブルクリックすることで、コマンドプロンプト（`cmd.exe`）の黒い画面を表示させずにクリーンにGUIが起動します。
+- **Windows**: `start-app.bat` をダブルクリック（初回は進捗表示、次回以降はサイレント起動）
+- **macOS**: `start-app.command` をダブルクリック（初回セットアップおよびGUI起動）
 
-- **cmd.exe の非表示（サイレント起動＆変換中のポップアップ完全抑制）**:
-  - 起動時だけでなく、変換中の FFmpeg / FFprobe / QSV コーデック判定などの子プロセス呼び出し時にも一切コンソールウィンドウを出現させない完全サイレント設計（`CREATE_NO_WINDOW` & `SW_HIDE`）。
+どちらのOSでも、コマンドライン引数なしで実行することでモダンなデスクトップGUI画面が立ち上がります。
+
+- **cmd.exe / ターミナルの配慮（Windowsサイレント起動＆ポップアップ完全抑制）**:
+  - Windowsでは起動時だけでなく、変換中の FFmpeg / FFprobe / QSV コーデック判定などの子プロセス呼び出し時にも一切コンソールウィンドウを出現させない完全サイレント設計（`CREATE_NO_WINDOW` & `SW_HIDE`）。
 - **高度な処理キュー管理（Queue Table）**:
   - 投入された動画ファイルの一覧、状態（待機中 / 処理中 / 完了 / キャンセル / エラー）、進捗率がテーブル形式で視認可能。
   - **マウスドラッグ＆ドロップおよびボタンによる処理順序の変更**:
@@ -192,16 +207,30 @@ Windows環境では `run.bat` をダブルクリックすることで、コマ�
 
 ---
 
-## 4. Gatekeeper警告の回避方法 (Mac版配布バイナリ利用時)
+## 4. Gatekeeper警告の回避方法 (Mac版配布ZIP利用時)
 
-GitHub Releases等からダウンロードした未署名のビルドバイナリをmacOSで初回実行する際、「開発元が未確認のため開けません」というGatekeeper警告が表示される場合があります。
+GitHub Releases等からダウンロードしたZIPをmacOSで展開し、`start-app.command` を初めて実行する際、macOSのセキュリティ保護機能（Gatekeeper）によって「開発元が未確認のため開けません」または「悪質なソフトウェアかどうかを検証できないため開けません」という警告が表示される場合があります。
 
-1. Finderで実行ファイルを「Controlキーを押しながらクリック」（右クリック）し、「開く」を選択します。
-2. 表示されるダイアログで「開く」をクリックすると、次回以降は通常通り起動できるようになります。
-3. または、ターミナルで以下のコマンドを実行して隔離属性を解除します：
-   ```bash
-   xattr -d com.apple.quarantine ./face-mosaic
-   ```
+以下のいずれかの方法で簡単に開くことができます：
+
+### 方法A: 右クリックから開く（最も簡単・おすすめ）
+1. Finderで `start-app.command` を **「Controlキーを押しながらクリック」（または右クリック）** します。
+2. 表示されるコンテキストメニューから **「開く」** を選択します。
+3. 確認ダイアログが表示されるので、**「開く」** ボタンをクリックします。
+   *(一度この操作を行うとmacOSに許可が記録され、次回以降は通常通りダブルクリックだけで起動します)*
+
+### 方法B: ターミナルから隔離属性（quarantine）を解除する
+ターミナルを開き、展開したフォルダ内で以下のコマンドを実行します：
+```bash
+xattr -d com.apple.quarantine start-app.command
+```
+または、直接 bash から起動することも可能です：
+```bash
+bash start-app.command
+```
+
+> [!TIP]
+> 配布ZIPアーカイブはGitHub Actions上で実行可能権限（`chmod +x`）を付与した状態でパッケージ化されています。通常の「アーカイブユーティリティ」（ダブルクリック展開）で解凍した場合、手動で `chmod +x` を実行する必要はありません。
 
 ---
 

@@ -39,19 +39,29 @@ Phase 2の内容（OpenVINO Execution Provider経由でのNPU実行、DirectML E
 
 ### 2.2 リリース方法（GitHub Actions / CI-CD）
 
-リリースはGitHub Actionsで自動化する。手動でのビルド・配布作業を減らし、Mac/Windows両方のビルドを一貫した手順で行うことが目的。
+リリースはGitHub Actionsで自動化する。手動でのビルド・配布作業を減らし、Mac/Windows両方の配布用ZIPパッケージを一貫した手順で生成する。PyInstaller等の自己完結バイナリ化は依存ライブラリ（OpenVINO、PySide6等）の肥大化や環境非互換リスクがあるため、**各OSに必要なファイルのみを厳選したクリーンなZIP配布パッケージ方式**を採用する。
 
-- **トリガー**：バージョンタグ（例：`v0.1.0`）のpushをトリガーとしてリリースワークフローを実行する
-- **ワークフロー構成（案）**
-  - `ci.yml`：`main`ブランチへのpush/PR時に実行。Lint・（あれば）テストの実行
-  - `release.yml`：タグpush時に実行。`macos-latest`/`windows-latest`のmatrix戦略で、それぞれのOS上でPyInstallerによるビルドを行い、GitHub Releasesにアーティファクト（Mac用・Windows用の実行ファイル）を添付する
-- **各OSランナーでの前提作業**：
-  - ffmpeg導入（Mac: `brew install ffmpeg`、Windows: `choco install ffmpeg`等、ワークフロー内で実行）
-  - SCRFD等のモデルファイルは`.gitignore`対象のため、ビルド前に`scripts/download_models.py`をCI上で実行して取得する
-  - 依存関係は2.1で分けた`requirements-common.txt`＋OS別ファイルをそれぞれのジョブでインストールする
-- **重要な制約（NPU関連）**：**GitHub-hosted Windowsランナーには実機のIntel Core Ultra NPUが搭載されていない**。そのため、CI上のWindowsビルドは「ビルドが正常に完成し、CPU実行で動作すること」の確認に留まる。OpenVINO EP／NPUでの実際の動作確認は、Phase 2で手元のWindows実機（Core Ultra 5 255H機）で別途行う必要がある
-- **Mac版の未署名アプリについて**：Apple Developer署名・公証（notarization）は行わない前提とする（個人利用のため）。そのため初回起動時にGatekeeperの「開発元が未確認」という警告が出る点をREADMEに明記し、右クリックで開く等の回避方法を案内する
-- **リリース物**：GitHub Releasesに、Mac用（.zip等）・Windows用（.zip等、`v0.1.0`以降windows対応が入ってから）のアーティファクトをそれぞれ添付する
+- **トリガー**：バージョンタグ（例：`v0.1.0`）のpush、またはGitHub上の手動実行（`workflow_dispatch`）
+- **ワークフロー構成**
+  - `ci.yml`：`main`ブランチへのpush/PR時に実行。macOS上での依存解決・テスト（pytest 63件）実行
+  - `release.yml`：タグpush時に実行。`windows-latest`および`macos-latest`でそれぞれOS固有のZIPパッケージを生成し、GitHub Releasesに添付
+- **パッケージ内容の分離（不要ファイルの徹底排除）**：
+  - **Windows版 (`face-mosaic-windows.zip`)**:
+    - `start-app.bat`（ワンクリック起動・初回進捗表示 / 2回目以降サイレント起動）
+    - `run.bat`（互換用フォワーダー）
+    - `scripts/setup_and_run.ps1`, `scripts/run_gui.vbs`, `scripts/download_models.py`, `scripts/benchmark.py`
+    - `requirements/requirements-windows.txt`, `requirements/requirements-common.txt`
+    - `face_mosaic/`, `configs/`, `assets/`, `LICENSE`, `README.md`
+    - *(Mac固有のシェルスクリプトやrequirementsは一切含まない)*
+  - **macOS版 (`face-mosaic-macos.zip`)**:
+    - `start-app.command`（ダブルクリック起動ランナー、実行権限 `+x` 付与）
+    - `scripts/setup_and_run_mac.sh`, `scripts/download_models.py`, `scripts/benchmark.py`
+    - `requirements/requirements-mac.txt`, `requirements/requirements-common.txt`
+    - `face_mosaic/`, `configs/`, `assets/`, `LICENSE`, `README.md`
+    - *(Windows固有の `.bat`, `.ps1`, `.vbs` やrequirementsは一切含まない)*
+- **Mac版の実行権限とGatekeeper対策**：
+  - GitHub ActionsのmacOSランナー上で `chmod +x start-app.command scripts/*.sh` を適用した上で `zip -r -y` するため、macOSの「アーカイブユーティリティ」で展開した際に実行権限がそのまま維持される。
+  - 未署名ファイルのGatekeeper警告に対しては、Finderでの「右クリック（Control+クリック）→ 開く」や `xattr -d com.apple.quarantine start-app.command` の案内をREADMEに明記して利用者の負担を最小化する。
 
 ---
 
