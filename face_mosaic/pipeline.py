@@ -49,7 +49,8 @@ class ProcessingPipeline:
             strength=self.config.blur.strength,
             mosaic_block_size=self.config.blur.mosaic_block_size,
             margin_x=self.config.blur.margin_x,
-            margin_y=self.config.blur.margin_y
+            margin_y=self.config.blur.margin_y,
+            shape=getattr(self.config.blur, "shape", "ellipse")
         )
 
     def process_video(

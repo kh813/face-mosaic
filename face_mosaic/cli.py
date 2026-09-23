@@ -131,6 +131,17 @@ def main():
         help="Directory to save output files"
     )
     parser.add_argument(
+        "--shape",
+        choices=["ellipse", "rect"],
+        default=None,
+        help="Blur/mosaic shape (ellipse for round, rect for rectangular)"
+    )
+    parser.add_argument(
+        "--no-illustration-filter",
+        action="store_true",
+        help="Disable automatic illustration / anime face exclusion"
+    )
+    parser.add_argument(
         "--no-recursive",
         action="store_true",
         help="Disable recursive search in directories"
@@ -174,6 +185,10 @@ def main():
         config.output.crf = args.crf
     if args.output_dir:
         config.output.output_dir = args.output_dir
+    if args.shape:
+        config.blur.shape = args.shape
+    if args.no_illustration_filter:
+        config.filters.illustration_filter.enabled = False
 
     # Folder Watch Mode
     if args.watch:

@@ -29,6 +29,7 @@ class BlurConfig:
     mosaic_block_size: int = 28
     margin_x: float = 0.50
     margin_y: float = 0.50
+    shape: str = "ellipse"  # "ellipse" (round) or "rect"
 
 @dataclass
 class AnimalFilterConfig:
@@ -41,6 +42,12 @@ class SkinColorFilterConfig:
     min_skin_ratio: float = 0.15
 
 @dataclass
+class IllustrationFilterConfig:
+    enabled: bool = True
+    flatness_threshold: float = 0.65
+    min_crop_size: int = 16
+
+@dataclass
 class StaticPhotoFilterConfig:
     enabled: bool = False
     min_static_frames: int = 30
@@ -51,6 +58,7 @@ class StaticPhotoFilterConfig:
 class FiltersConfig:
     animal_filter: AnimalFilterConfig = field(default_factory=AnimalFilterConfig)
     skin_color_filter: SkinColorFilterConfig = field(default_factory=SkinColorFilterConfig)
+    illustration_filter: IllustrationFilterConfig = field(default_factory=IllustrationFilterConfig)
     static_photo_filter: StaticPhotoFilterConfig = field(default_factory=StaticPhotoFilterConfig)
     exclusion_masks: List[List[float]] = field(default_factory=list)
 
@@ -90,11 +98,13 @@ class AppConfig:
             f_data = data["filters"]
             animal_cfg = AnimalFilterConfig(**f_data.get("animal_filter", {})) if "animal_filter" in f_data else AnimalFilterConfig()
             skin_cfg = SkinColorFilterConfig(**f_data.get("skin_color_filter", {})) if "skin_color_filter" in f_data else SkinColorFilterConfig()
+            illus_cfg = IllustrationFilterConfig(**f_data.get("illustration_filter", {})) if "illustration_filter" in f_data else IllustrationFilterConfig()
             static_cfg = StaticPhotoFilterConfig(**f_data.get("static_photo_filter", {})) if "static_photo_filter" in f_data else StaticPhotoFilterConfig()
             masks = f_data.get("exclusion_masks", [])
             cfg.filters = FiltersConfig(
                 animal_filter=animal_cfg,
                 skin_color_filter=skin_cfg,
+                illustration_filter=illus_cfg,
                 static_photo_filter=static_cfg,
                 exclusion_masks=masks
             )

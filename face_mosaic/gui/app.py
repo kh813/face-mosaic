@@ -633,6 +633,20 @@ class MainWindow(QMainWindow):
         self.spin_margin.setValue(50)
         grid.addWidget(self.spin_margin, 4, 1)
 
+        grid.addLayout(_label_with_info(
+            "Blur Shape:",
+            "<b>モザイク・ぼかしの形状 (Blur Shape)</b><br>"
+            "顔にかけるモザイクやぼかしの輪郭形状を選択します。<br><br>"
+            "<b>Round (Ellipse) ★推奨:</b><br>"
+            "　顔の輪郭に沿った自然な楕円・丸型モザイク。背景への余計なかぶりを防ぎます。<br><br>"
+            "<b>Rectangle (Square):</b><br>"
+            "　従来の四角形モザイク。"
+        ), 4, 2)
+
+        self.combo_shape = QComboBox()
+        self.combo_shape.addItems(["Round (Ellipse) ★推奨", "Rectangle (Square)"])
+        grid.addWidget(self.combo_shape, 4, 3)
+
         left_layout.addWidget(param_group)
 
         # 3. Execution Group
@@ -1319,6 +1333,10 @@ class MainWindow(QMainWindow):
             margin_ratio = self.spin_margin.value() / 100.0
             cfg.blur.margin_x = margin_ratio
             cfg.blur.margin_y = margin_ratio
+
+            shape_text = self.combo_shape.currentText().lower()
+            cfg.blur.shape = "ellipse" if ("round" in shape_text or "ellipse" in shape_text) else "rect"
+            cfg.filters.illustration_filter.enabled = True
 
             codec_str = "hevc" if "HEVC" in self.combo_codec.currentText() else "h264"
             cfg.output.codec = codec_str

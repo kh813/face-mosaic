@@ -136,6 +136,24 @@
   - OpenVINO (`MULTI:GPU,NPU`) および Intel QSV (`hevc_qsv`) の既存最適化パスを 100% 保持
 - [x] エンコーダーおよびハードウェア検知の単体テスト（`tests/test_hardware.py`, `tests/test_io_encoders.py`）追加（全70件通過）
 
+## Phase 3.5: 丸型（楕円）モザイク描画およびイラスト・アニメ顔除外フィルター
+
+- [x] 丸型モザイク／ぼかしレンダリングの実装（`face_mosaic/blur.py`）
+  - バウンディングボックス内にアンチエイリアス楕円マスク（`cv2.ellipse` + `LINE_AA`）を生成
+  - マスクのアルファブレンド合成により四隅の背景巻き込みを解消、顔輪郭に沿った自然な丸型モザイク描画
+  - モザイク（pixelation）およびガウスぼかし（gaussian）双方の楕円マスク対応
+- [x] イラスト・アニメ顔自動除外フィルターの実装（`face_mosaic/filters/illustration.py`）
+  - 実写皮膚のテクスチャ（キメ・陰影・毛穴）とイラスト肌の平坦度（セル画調・ベタ塗り）の統計的差異を判別
+  - YCbCr 肌色領域内の $5\times 5$ 局所標準偏差（平坦ピクセル比率 `flatness_ratio >= 0.65`）による高精度判定
+  - 16px 未満の極小クロップに対する安全側（実写扱い）フォールバック機構
+  - `FaceTracker` への統合：トラックサンプルの全会一致（unanimous）でイラストと判定された場合のみ除外（実写見逃し防止）
+- [x] 設定（Config）・CLI・GUI への統合
+  - `BlurConfig.shape`（`ellipse` / `rect`、既定: `ellipse`）および `IllustrationFilterConfig` 追加
+  - CLI: `--shape {ellipse,rect}` および `--no-illustration-filter` オプション追加
+  - GUI: パラメータ設定に「Blur Shape（Round (Ellipse) ★推奨 / Rectangle (Square)）」選択コンボボックス追加
+- [x] 単体テスト追加と全件パス（`tests/test_illustration_and_round_blur.py`、全74件テスト通過）
+- [x] ドキュメント同期（`README.md`, `docs/face-mozaic-specs.md`, `docs/face-mozaic-todo.md`）
+
 ## バックログ（優先度未定・実運用次第で検討）
 
 - [ ] 実際に発生した誤検知フレームを蓄積し、検出モデルのハードネガティブ追加学習

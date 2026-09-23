@@ -11,6 +11,7 @@ from .detector import FaceDetection
 from .filters.skin_color import SkinColorFilter
 from .filters.animal_classifier import AnimalClassifier
 from .filters.static_photo import StaticPhotoFilter
+from .filters.illustration import IllustrationFilter
 from .config import FiltersConfig
 
 def compute_iou(box1: np.ndarray, box2: np.ndarray) -> float:
@@ -86,6 +87,10 @@ class FaceTracker:
             min_static_frames=self.filters_config.static_photo_filter.min_static_frames,
             motion_similarity_threshold=self.filters_config.static_photo_filter.motion_similarity_threshold,
             texture_diff_threshold=self.filters_config.static_photo_filter.texture_diff_threshold
+        )
+        self.illustration_filter = IllustrationFilter(
+            flatness_threshold=self.filters_config.illustration_filter.flatness_threshold,
+            min_crop_size=self.filters_config.illustration_filter.min_crop_size
         )
 
     def extract_crop(
@@ -219,6 +224,18 @@ class FaceTracker:
                 human_votes.append(is_h)
             if human_votes and not any(human_votes):
                 return False
+
+        # Illustration / drawing filter (Anime, cartoon, drawing faces)
+        if self.filters_config.illustration_filter.enabled and track.crops:
+            valid_crops = [c for c in track.crops if c is not None and np.any(c > 0)]
+            if valid_crops:
+                human_votes = []
+                for crop in valid_crops[::max(1, len(valid_crops) // 5)]:
+                    is_h, _ = self.illustration_filter.is_human_face(crop)
+                    human_votes.append(is_h)
+                if human_votes and not any(human_votes):
+                    track.crops.clear()
+                    return False
 
         # Static photo filter
         if self.filters_config.static_photo_filter.enabled and track.crops:

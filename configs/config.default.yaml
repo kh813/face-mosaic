@@ -18,6 +18,7 @@ tracking:
 # Blur & mosaic effect settings
 blur:
   type: "gaussian"               # Options: "gaussian" or "mosaic"
+  shape: "ellipse"               # Options: "ellipse" (round) or "rect" (rectangular)
   strength: 51                   # Gaussian blur kernel size (odd integer, e.g. 51) or sigma
   mosaic_block_size: 28          # Mosaic block size in pixels (if type == "mosaic")
   margin_x: 0.50                 # Horizontal expansion ratio of bounding box (e.g. 0.50 = 50% on each side)
@@ -35,6 +36,12 @@ filters:
     enabled: true
     min_skin_ratio: 0.15         # Minimum percentage of pixels within skin tone
   
+  # Illustration / Drawing / Anime face filter (Eliminates flat-shaded cartoon/drawn faces)
+  illustration_filter:
+    enabled: true
+    flatness_threshold: 0.65
+    min_crop_size: 16
+
   # Static photo / advertisement filter (Composite conditions, default OFF)
   static_photo_filter:
     enabled: false

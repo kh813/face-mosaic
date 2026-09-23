@@ -1,6 +1,7 @@
 """
 Face blur and mosaic rendering module for face-mosaic.
-Implements Gaussian blur and Mosaic pixelation with margin expansion.
+Implements Gaussian blur and Mosaic pixelation with margin expansion
+and round (elliptical/circular) or rectangular shapes.
 """
 
 from typing import List, Tuple
@@ -14,13 +15,15 @@ class FaceBlurrer:
         strength: int = 51,
         mosaic_block_size: int = 28,
         margin_x: float = 0.50,
-        margin_y: float = 0.50
+        margin_y: float = 0.50,
+        shape: str = "ellipse"  # "ellipse" (round), "circle", or "rect"
     ):
         self.blur_type = blur_type.lower()
         self.strength = strength if strength % 2 == 1 else strength + 1  # ensure odd
         self.mosaic_block_size = max(2, mosaic_block_size)
         self.margin_x = max(0.0, margin_x)
         self.margin_y = max(0.0, margin_y)
+        self.shape = shape.lower()
 
     def expand_bbox(self, bbox: np.ndarray, img_w: int, img_h: int) -> Tuple[int, int, int, int]:
         """
@@ -68,7 +71,7 @@ class FaceBlurrer:
 
     def apply_blur(self, frame: np.ndarray, bboxes: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Apply blur/mosaic to frame at specified bboxes.
+        Apply blur/mosaic to frame at specified bboxes using round (ellipse) or rectangular shape.
         Returns:
             (processed_frame, mask)
             where mask is a uint8 binary image (255 where blurred, 0 elsewhere).
@@ -83,12 +86,28 @@ class FaceBlurrer:
                 continue
 
             roi = out_frame[y1:y2, x1:x2]
+            rh, rw = roi.shape[:2]
+            if rh <= 0 or rw <= 0:
+                continue
+
             if self.blur_type == "mosaic":
                 blurred_roi = self.apply_mosaic_to_roi(roi)
             else:
                 blurred_roi = self.apply_gaussian_to_roi(roi)
 
-            out_frame[y1:y2, x1:x2] = blurred_roi
-            mask[y1:y2, x1:x2] = 255
+            if self.shape in ("ellipse", "round", "circle"):
+                # Generate smooth anti-aliased elliptical/circular mask
+                ellipse_mask = np.zeros((rh, rw), dtype=np.uint8)
+                center = (rw // 2, rh // 2)
+                axes = (rw // 2, rh // 2)
+                cv2.ellipse(ellipse_mask, center, axes, 0, 0, 360, 255, -1, lineType=cv2.LINE_AA)
+
+                # Smooth alpha blending along the boundary
+                alpha = (ellipse_mask.astype(np.float32) / 255.0)[:, :, None]
+                out_frame[y1:y2, x1:x2] = (blurred_roi.astype(np.float32) * alpha + roi.astype(np.float32) * (1.0 - alpha)).astype(np.uint8)
+                mask[y1:y2, x1:x2] = np.maximum(mask[y1:y2, x1:x2], ellipse_mask)
+            else:
+                out_frame[y1:y2, x1:x2] = blurred_roi
+                mask[y1:y2, x1:x2] = 255
 
         return out_frame, mask
