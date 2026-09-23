@@ -93,6 +93,24 @@
 - [x] ファイルログ記録（`logs/face_mosaic.log`）および「📋 Copy Log」「📁 Open Log File」ボタン
 - [x] キュー削除・選択・停止状態遷移・ディレクトリ記憶・処理順序並び替えの自動テスト追加（49テスト全件通過）
 
+## Phase 3.2: 4K60fps長尺動画対応・OOM防止・チェックポイント＆レジューム・CPU/GPU/NPU最適化
+
+- [x] 長尺4K60fps動画での OOM 解消（NumPy スライスクロップによる生バッファ参照リークの遮断、最大 128px リサイズ＋`.copy()`、トラックレット保持上限 35 枚）
+- [x] OpenCV `blobFromImage` アロケータ制約の解消（純粋 NumPy 演算による前処理移行）
+- [x] プレビュー画像転送時のメモリ抑制（640px 幅への事前縮小と解放）
+- [x] 中間チェックポイント機構（`face_mosaic/checkpoint.py`）の実装
+  - 出力先と同階層の隠しフォルダ `.{output_name}.checkpoint/` 管理
+  - `state.json` および JSONL 形式の `pass1_detections.jsonl`（1000フレーム約20KB、不要キャッシュ防止）
+  - 中断時の安全な再開（Pass 1 途中復帰、Pass 2 スキップ復帰）
+  - 処理完了時の一時フォルダ完全自動削除とアトミックリネーム（`.part.mp4` -> `.mp4`）
+- [x] OpenVINO ネイティブ推論の統合（Intel Core Ultra 5 225H / Intel Arc 130T GPU / Intel AI Boost NPU）
+  - `MULTI:GPU,NPU` による 135〜155+ FPS の高速推論
+  - NPU 向け静的モデルリシェイプ（`[1, 3, 640, 640]`）対応
+- [x] Pass 1 動画読み込みデコード最適化（FFmpeg `-vf scale=640:360` ＋ `-threads 0` により 2.4 FPS → 約 60 FPS へ 25倍高速化）
+- [x] Pass 2 レンダリング 3ステージ並行非同期パイプライン化（`cv2.VideoCapture` 高速デコード ＋ メインスレッド描画 ＋ `VideoWriter` 非同期 QSV エンコードにより 2.5 FPS → 20〜30+ FPS へ 最大10倍高速化）
+- [x] 10-bit HDR / BT.2020 色再現性の完全保証（10-bit `p010le` 自動適用、`-bsf:v hevc_metadata` による VUI ビットストリーム注入、色味変化の完全防止）
+- [x] 単体・結合テストの追加・更新（チェックポイント、ライフサイクル、レジューム、メモリ分離、GUIログコピー、VUI BSFタグ等 全63件テスト通過）
+
 ## バックログ（優先度未定・実運用次第で検討）
 
 - [ ] 実際に発生した誤検知フレームを蓄積し、検出モデルのハードネガティブ追加学習

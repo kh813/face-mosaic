@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Generator, Tuple, Optional, Dict, Any
 import numpy as np
+import cv2
 
 from .color import ColorMetadata, parse_color_metadata
 
@@ -178,67 +179,105 @@ def probe_video(filepath: str) -> VideoInfo:
 
 class VideoReader:
     """
-    Reads frames as raw BGR24 arrays using ffmpeg subprocess pipe.
-    Automatically handles autorotation filter.
+    Reads frames as raw BGR24 arrays.
+    When scale is None, utilizes cv2.VideoCapture for native in-process hardware accelerated
+    decoding (Media Foundation / D3D11 / FFmpeg), bypassing Windows pipe context-switch limits.
+    When scale is specified (e.g. Pass 1), uses multithreaded FFmpeg subprocess with -vf scale.
     """
-    def __init__(self, filepath: str):
+    def __init__(self, filepath: str, scale: Optional[Tuple[int, int]] = None):
         self.filepath = str(filepath)
         self.info = probe_video(filepath)
+        self.scale = scale
         
         # When autorotate filter is applied by ffmpeg, 90/270 degree rotation swaps width and height
         self.needs_swap = abs(self.info.rotation) in (90, 270)
-        self.out_width = self.info.height if self.needs_swap else self.info.width
-        self.out_height = self.info.width if self.needs_swap else self.info.height
+        self.orig_width = self.info.height if self.needs_swap else self.info.width
+        self.orig_height = self.info.width if self.needs_swap else self.info.height
+
+        if scale is not None:
+            self.out_width, self.out_height = scale
+        else:
+            self.out_width = self.orig_width
+            self.out_height = self.orig_height
         
-        # Build ffmpeg command
-        ffmpeg_bin = get_ffmpeg_cmd()
-        cmd = [
-            ffmpeg_bin,
-            "-v", "error",
-            "-i", self.filepath,
-            "-f", "rawvideo",
-            "-pix_fmt", "bgr24",
-            "pipe:1"
-        ]
-        try:
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                bufsize=10**8,
-                **get_subprocess_kwargs()
-            )
-        except FileNotFoundError:
-            raise RuntimeError(
-                f"ffmpeg executable not found ('{ffmpeg_bin}'). "
-                f"Please ensure FFmpeg is installed and added to PATH or placed in the bin/ directory."
-            )
-        self.frame_size = self.out_width * self.out_height * 3
+        self.cap = None
+        self.process = None
+
+        # Full resolution decoding (Pass 2): native hardware acceleration via cv2.VideoCapture
+        if scale is None:
+            try:
+                cap = cv2.VideoCapture(self.filepath)
+                if cap.isOpened():
+                    self.cap = cap
+            except Exception:
+                self.cap = None
+
+        if self.cap is None:
+            # Multithreaded FFmpeg decode pipe (supports arbitrary scaling filters)
+            ffmpeg_bin = get_ffmpeg_cmd()
+            cmd = [
+                ffmpeg_bin,
+                "-v", "error",
+                "-threads", "0",
+                "-i", self.filepath,
+            ]
+            if scale is not None:
+                cmd.extend(["-vf", f"scale={self.out_width}:{self.out_height}"])
+            cmd.extend([
+                "-f", "rawvideo",
+                "-pix_fmt", "bgr24",
+                "pipe:1"
+            ])
+            try:
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    bufsize=10**8,
+                    **get_subprocess_kwargs()
+                )
+            except FileNotFoundError:
+                raise RuntimeError(
+                    f"ffmpeg executable not found ('{ffmpeg_bin}'). "
+                    f"Please ensure FFmpeg is installed and added to PATH or placed in the bin/ directory."
+                )
+            self.frame_size = self.out_width * self.out_height * 3
 
     def __iter__(self) -> Generator[np.ndarray, None, None]:
-        while True:
-            raw_bytes = self.process.stdout.read(self.frame_size)
-            if not raw_bytes or len(raw_bytes) < self.frame_size:
-                ret = self.process.poll()
-                if ret is not None and ret != 0:
-                    err = self.process.stderr.read().decode('utf-8', errors='replace')
-                    raise RuntimeError(f"FFmpeg read error (code {ret}): {err}")
-                break
-            frame = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((self.out_height, self.out_width, 3))
-            yield frame
+        if self.cap is not None:
+            while True:
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    break
+                yield frame
+        else:
+            while True:
+                raw_bytes = self.process.stdout.read(self.frame_size)
+                if not raw_bytes or len(raw_bytes) < self.frame_size:
+                    ret = self.process.poll()
+                    if ret is not None and ret != 0:
+                        err = self.process.stderr.read().decode('utf-8', errors='replace')
+                        raise RuntimeError(f"FFmpeg read error (code {ret}): {err}")
+                    break
+                frame = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((self.out_height, self.out_width, 3))
+                yield frame
 
     def close(self):
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
         if self.process:
             self.process.stdout.close()
             self.process.wait()
+            self.process = None
 
 class PrefetchedVideoReader:
     """
     Wraps VideoReader with a background worker thread and queue.
     Prefetches decoded frames so GPU inference does not block on FFmpeg I/O.
     """
-    def __init__(self, filepath: str, queue_size: int = 16):
-        self.reader = VideoReader(filepath)
+    def __init__(self, filepath: str, queue_size: int = 16, scale: Optional[Tuple[int, int]] = None):
+        self.reader = VideoReader(filepath, scale=scale)
         self.queue_size = queue_size
         self.queue: queue.Queue = queue.Queue(maxsize=queue_size)
         self.stop_event = threading.Event()
@@ -249,6 +288,14 @@ class PrefetchedVideoReader:
     @property
     def info(self) -> VideoInfo:
         return self.reader.info
+
+    @property
+    def orig_width(self) -> int:
+        return self.reader.orig_width
+
+    @property
+    def orig_height(self) -> int:
+        return self.reader.orig_height
 
     @property
     def out_width(self) -> int:
@@ -327,13 +374,18 @@ class VideoWriter:
         ffmpeg_bin = get_ffmpeg_cmd()
 
         def build_cmd(use_qsv: bool):
+            is_10bit = bool(input_info.color_metadata and input_info.color_metadata.pix_fmt in ("yuv420p10le", "p010le", "p010"))
+            is_hevc = codec.lower() in ("hevc", "h265", "x265")
+
             if use_qsv:
-                enc = "hevc_qsv" if codec.lower() in ("hevc", "h265", "x265") else "h264_qsv"
+                enc = "hevc_qsv" if is_hevc else "h264_qsv"
                 qsv_p = QSV_PRESET_MAP.get(preset.lower(), "medium")
-                enc_args = ["-c:v", enc, "-global_quality", str(crf), "-preset", qsv_p, "-pix_fmt", "nv12"]
+                pix = "p010le" if (is_10bit and is_hevc) else "nv12"
+                enc_args = ["-c:v", enc, "-global_quality", str(crf), "-preset", qsv_p, "-pix_fmt", pix]
             else:
-                enc = "libx265" if codec.lower() in ("hevc", "h265", "x265") else "libx264"
-                enc_args = ["-c:v", enc, "-crf", str(crf), "-preset", preset, "-pix_fmt", "yuv420p"]
+                enc = "libx265" if is_hevc else "libx264"
+                pix = "yuv420p10le" if (is_10bit and is_hevc) else "yuv420p"
+                enc_args = ["-c:v", enc, "-crf", str(crf), "-preset", preset, "-pix_fmt", pix]
 
             c = [
                 ffmpeg_bin,
@@ -352,11 +404,13 @@ class VideoWriter:
             c.extend(enc_args)
             if preserve_color_tags and input_info.color_metadata:
                 c.extend(input_info.color_metadata.to_ffmpeg_args())
+                if is_hevc:
+                    c.extend(input_info.color_metadata.to_bsf_args(codec))
             c.append(self.output_path)
             return c
 
         self.process = None
-        if use_hardware_accel and supports_qsv():
+        if use_hardware_accel and supports_qsv() and width >= 640 and height >= 480:
             try:
                 cmd_qsv = build_cmd(use_qsv=True)
                 proc = subprocess.Popen(
@@ -389,12 +443,37 @@ class VideoWriter:
                     f"Please ensure FFmpeg is installed and added to PATH or placed in the bin/ directory."
                 )
 
+        # Asynchronous background pipe writer thread (decouples rendering from stdin pipe)
+        self.queue: queue.Queue = queue.Queue(maxsize=16)
+        self.writer_error: Optional[Exception] = None
+        self.writer_thread = threading.Thread(target=self._writer_worker, daemon=True)
+        self.writer_thread.start()
+
+    def _writer_worker(self):
+        try:
+            while True:
+                item = self.queue.get()
+                if item is None:
+                    break
+                if isinstance(item, np.ndarray):
+                    self.process.stdin.write(item.tobytes())
+                else:
+                    self.process.stdin.write(item)
+        except Exception as e:
+            self.writer_error = e
+
     def write_frame(self, frame: np.ndarray):
+        if self.writer_error:
+            raise self.writer_error
         assert frame.shape[0] == self.height and frame.shape[1] == self.width, "Frame dimensions mismatch"
-        self.process.stdin.write(frame.tobytes())
+        self.queue.put(frame)
 
     def close(self):
         if self.process:
+            self.queue.put(None)
+            self.writer_thread.join()
+            if self.writer_error:
+                raise self.writer_error
             self.process.stdin.close()
             stderr_output = self.process.stderr.read()
             self.process.wait()

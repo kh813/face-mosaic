@@ -5,6 +5,7 @@ and bidirectional frame padding (forward/backward blur extension).
 
 from typing import List, Dict, Optional, Tuple
 import numpy as np
+import cv2
 
 from .detector import FaceDetection
 from .filters.skin_color import SkinColorFilter
@@ -37,7 +38,7 @@ class Tracklet:
         self.scores: Dict[int, float] = {start_frame: detection.score}
         # Frame index -> Landmarks
         self.landmarks: Dict[int, Optional[np.ndarray]] = {start_frame: detection.landmarks}
-        # Sequence of face crops for track-level evaluation
+        # Sequence of face crops for track-level evaluation (capped to avoid memory exhaustion)
         self.crops: List[np.ndarray] = [crop] if crop is not None else []
         
         self.is_valid: Optional[bool] = None  # Judged at track level
@@ -47,7 +48,7 @@ class Tracklet:
         self.frames[frame_idx] = detection.bbox
         self.scores[frame_idx] = detection.score
         self.landmarks[frame_idx] = detection.landmarks
-        if crop is not None:
+        if crop is not None and len(self.crops) < 35:
             self.crops.append(crop)
 
     @property
@@ -87,17 +88,43 @@ class FaceTracker:
             texture_diff_threshold=self.filters_config.static_photo_filter.texture_diff_threshold
         )
 
-    def extract_crop(self, frame: np.ndarray, bbox: np.ndarray) -> np.ndarray:
+    def extract_crop(
+        self,
+        frame: np.ndarray,
+        bbox: np.ndarray,
+        orig_shape: Optional[Tuple[int, int]] = None,
+        max_dim: int = 128
+    ) -> np.ndarray:
         h, w = frame.shape[:2]
-        x1 = max(0, int(np.floor(bbox[0])))
-        y1 = max(0, int(np.floor(bbox[1])))
-        x2 = min(w, int(np.ceil(bbox[2])))
-        y2 = min(h, int(np.ceil(bbox[3])))
+        if orig_shape is not None and (orig_shape[0] != h or orig_shape[1] != w):
+            scale_x = w / orig_shape[1]
+            scale_y = h / orig_shape[0]
+            bx1, by1, bx2, by2 = bbox[0] * scale_x, bbox[1] * scale_y, bbox[2] * scale_x, bbox[3] * scale_y
+        else:
+            bx1, by1, bx2, by2 = bbox[0], bbox[1], bbox[2], bbox[3]
+
+        x1 = max(0, int(np.floor(bx1)))
+        y1 = max(0, int(np.floor(by1)))
+        x2 = min(w, int(np.ceil(bx2)))
+        y2 = min(h, int(np.ceil(by2)))
         if x2 <= x1 or y2 <= y1:
             return np.zeros((1, 1, 3), dtype=np.uint8)
-        return frame[y1:y2, x1:x2]
+        crop = frame[y1:y2, x1:x2]
+        ch, cw = crop.shape[:2]
+        if max(ch, cw) > max_dim:
+            scale = max_dim / max(ch, cw)
+            nw = max(1, int(cw * scale))
+            nh = max(1, int(ch * scale))
+            return cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA).copy()
+        return crop.copy()
 
-    def update(self, frame_idx: int, frame: np.ndarray, detections: List[FaceDetection]):
+    def update(
+        self,
+        frame_idx: int,
+        frame: np.ndarray,
+        detections: List[FaceDetection],
+        orig_shape: Optional[Tuple[int, int]] = None
+    ):
         """
         Process detections for frame_idx.
         """
@@ -121,7 +148,7 @@ class FaceTracker:
                     ious[t_idx, d_idx] = 0.0
                     continue
 
-                crop = self.extract_crop(frame, detections[d_idx].bbox)
+                crop = self.extract_crop(frame, detections[d_idx].bbox, orig_shape=orig_shape)
                 self.active_tracks[t_idx].add_detection(frame_idx, detections[d_idx], crop)
                 matched_tracks.add(t_idx)
                 matched_dets.add(d_idx)
@@ -131,7 +158,7 @@ class FaceTracker:
         # Create new tracks for unmatched detections
         for d_idx, det in enumerate(detections):
             if d_idx not in matched_dets:
-                crop = self.extract_crop(frame, det.bbox)
+                crop = self.extract_crop(frame, det.bbox, orig_shape=orig_shape)
                 track = Tracklet(self.next_track_id, frame_idx, det, crop)
                 self.next_track_id += 1
                 self.active_tracks.append(track)
@@ -196,8 +223,10 @@ class FaceTracker:
         # Static photo filter
         if self.filters_config.static_photo_filter.enabled and track.crops:
             if self.static_filter.is_static_advertisement(track.crops):
+                track.crops.clear()
                 return False
 
+        track.crops.clear()
         return True
 
     def get_frame_bboxes_map(self, total_frames: int, img_w: int, img_h: int) -> Dict[int, List[np.ndarray]]:

@@ -72,28 +72,51 @@ class SCRFDDetector(BaseFaceDetector):
         self.nms_threshold = nms_threshold
         self.input_size = input_size
         
-        # ONNX Runtime session configuration
-        if providers is None:
-            available = ort.get_available_providers()
-            # Priority: CoreML (Mac Apple Silicon), OpenVINO (Windows NPU/iGPU), DirectML (Windows GPU), CPU
-            providers = []
-            if "CoreMLExecutionProvider" in available:
-                providers.append("CoreMLExecutionProvider")
-            if "OpenVINOExecutionProvider" in available:
-                providers.append("OpenVINOExecutionProvider")
-            if "DmlExecutionProvider" in available:
-                providers.append("DmlExecutionProvider")
-            providers.append("CPUExecutionProvider")
+        # 1. Try Intel OpenVINO acceleration (Intel Arc GPU / Intel AI Boost NPU)
+        self.ov_compiled = None
+        self.session = None
 
-        sess_options = ort.SessionOptions()
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = ort.InferenceSession(str(self.model_path), sess_options=sess_options, providers=providers)
-        self.active_provider = self.session.get_providers()[0] if self.session.get_providers() else "Unknown"
+        try:
+            import openvino as ov
+            core = ov.Core()
+            devs = core.available_devices
+            target_device = None
+            if "GPU" in devs and "NPU" in devs:
+                target_device = "MULTI:GPU,NPU"
+            elif "GPU" in devs:
+                target_device = "GPU"
+            elif "NPU" in devs:
+                target_device = "NPU"
 
-        
-        # Parse inputs/outputs
-        self.input_name = self.session.get_inputs()[0].name
-        self.output_names = [o.name for o in self.session.get_outputs()]
+            if target_device:
+                ov_model = core.read_model(str(self.model_path))
+                ov_model.reshape([1, 3, self.input_size[1], self.input_size[0]])
+                self.ov_compiled = core.compile_model(ov_model, target_device)
+                self.active_provider = f"OpenVINO ({target_device})"
+                self.output_names = [o.get_any_name() for o in ov_model.outputs]
+                print(f"[Hardware Acceleration] Active: {self.active_provider}")
+        except Exception:
+            self.ov_compiled = None
+
+        # 2. Fallback to ONNX Runtime (DirectML / CoreML / CUDA / CPU)
+        if self.ov_compiled is None:
+            if providers is None:
+                available = ort.get_available_providers()
+                providers = []
+                if "CoreMLExecutionProvider" in available:
+                    providers.append("CoreMLExecutionProvider")
+                if "OpenVINOExecutionProvider" in available:
+                    providers.append("OpenVINOExecutionProvider")
+                if "DmlExecutionProvider" in available:
+                    providers.append("DmlExecutionProvider")
+                providers.append("CPUExecutionProvider")
+
+            sess_options = ort.SessionOptions()
+            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            self.session = ort.InferenceSession(str(self.model_path), sess_options=sess_options, providers=providers)
+            self.active_provider = self.session.get_providers()[0] if self.session.get_providers() else "Unknown"
+            self.input_name = self.session.get_inputs()[0].name
+            self.output_names = [o.name for o in self.session.get_outputs()]
         
         # SCRFD anchor strides
         self.fmc = 3
@@ -155,12 +178,13 @@ class SCRFDDetector(BaseFaceDetector):
 
         return keep
 
-    def detect(self, img: np.ndarray) -> List[FaceDetection]:
+    def detect(self, img: np.ndarray, orig_shape: Optional[Tuple[int, int]] = None) -> List[FaceDetection]:
         """
         Run inference on image (BGR).
         Returns list of FaceDetection objects with coordinates scaled back to original image size.
         """
-        orig_h, orig_w = img.shape[:2]
+        h, w = img.shape[:2]
+        orig_h, orig_w = orig_shape if orig_shape is not None else (h, w)
         input_w, input_h = self.input_size
 
         # Preprocessing: resize preserving aspect ratio or direct resize
@@ -174,20 +198,22 @@ class SCRFDDetector(BaseFaceDetector):
             new_h = int(new_w * im_ratio)
 
         det_scale = float(new_h) / orig_h
-        resized_img = cv2.resize(img, (new_w, new_h))
-        det_img = np.zeros((input_h, input_w, 3), dtype=np.uint8)
-        det_img[:new_h, :new_w, :] = resized_img
+        if h == new_h and w == new_w:
+            det_img = np.zeros((input_h, input_w, 3), dtype=np.uint8)
+            det_img[:new_h, :new_w, :] = img
+        else:
+            resized_img = cv2.resize(img, (new_w, new_h))
+            det_img = np.zeros((input_h, input_w, 3), dtype=np.uint8)
+            det_img[:new_h, :new_w, :] = resized_img
 
         # Normalize (BGR -> RGB, mean 127.5, std 128.0)
-        blob = cv2.dnn.blobFromImage(
-            det_img,
-            scalefactor=1.0 / 128.0,
-            size=(input_w, input_h),
-            mean=(127.5, 127.5, 127.5),
-            swapRB=True
-        )
+        blob = (det_img[:, :, ::-1].astype(np.float32) - 127.5) * (1.0 / 128.0)
+        blob = np.ascontiguousarray(blob.transpose(2, 0, 1)[np.newaxis, ...])
 
-        net_outs = self.session.run(self.output_names, {self.input_name: blob})
+        if self.ov_compiled is not None:
+            net_outs = list(self.ov_compiled([blob]).values())
+        else:
+            net_outs = self.session.run(self.output_names, {self.input_name: blob})
 
         # Separate outputs
         scores_list = []

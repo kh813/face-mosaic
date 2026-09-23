@@ -412,14 +412,16 @@ def test_gui_table_selection_while_running_preserves_stop_button(qapp, tmp_path)
 
 
 def test_gui_copy_log_button(qapp):
-    from unittest.mock import patch
+    from unittest.mock import patch, MagicMock
     window = MainWindow()
     window.txt_log.setPlainText("Test Diagnostic Log Output 12345")
 
-    with patch("PySide6.QtWidgets.QMessageBox.information"):
-        window.btn_copy_log.click()
+    mock_clipboard = MagicMock()
+    with patch("face_mosaic.gui.app.QApplication.clipboard", return_value=mock_clipboard):
+        with patch("PySide6.QtWidgets.QMessageBox.information"):
+            window.btn_copy_log.click()
 
-    assert "Test Diagnostic Log Output 12345" in QApplication.clipboard().text()
+    mock_clipboard.setText.assert_called_once_with("Test Diagnostic Log Output 12345")
 
 
 def test_gui_context_menu_actions(qapp, tmp_path):

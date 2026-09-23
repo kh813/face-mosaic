@@ -31,6 +31,45 @@ class ColorMetadata:
             args.extend(["-color_range", self.color_range])
         return args
 
+    def to_bsf_args(self, codec: str = "hevc") -> list:
+        """
+        Generate HEVC bitstream filter arguments to embed VUI colour metadata
+        directly into the HEVC NAL units (essential for QSV / hardware encoders).
+        """
+        if codec.lower() not in ("hevc", "h265", "x265"):
+            return []
+
+        PRIMARIES_MAP = {
+            "bt709": 1,
+            "bt2020": 9,
+        }
+        TRANSFER_MAP = {
+            "bt709": 1,
+            "smpte170m": 6,
+            "smpte2084": 16,
+            "arib-std-b67": 18,
+        }
+        MATRIX_MAP = {
+            "bt709": 1,
+            "smpte170m": 6,
+            "bt2020nc": 9,
+            "bt2020_ncl": 9,
+            "bt2020c": 10,
+            "bt2020_cl": 10,
+        }
+
+        items = []
+        if self.color_primaries and self.color_primaries.lower() in PRIMARIES_MAP:
+            items.append(f"colour_primaries={PRIMARIES_MAP[self.color_primaries.lower()]}")
+        if self.color_transfer and self.color_transfer.lower() in TRANSFER_MAP:
+            items.append(f"transfer_characteristics={TRANSFER_MAP[self.color_transfer.lower()]}")
+        if self.color_space and self.color_space.lower() in MATRIX_MAP:
+            items.append(f"matrix_coefficients={MATRIX_MAP[self.color_space.lower()]}")
+
+        if items:
+            return ["-bsf:v", f"hevc_metadata={':'.join(items)}"]
+        return []
+
 def parse_color_metadata(stream_info: Dict[str, Any]) -> ColorMetadata:
     """
     Extract color metadata from ffprobe stream dictionary.

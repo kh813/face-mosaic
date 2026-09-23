@@ -53,3 +53,9 @@ def test_color_metadata_ffmpeg_args():
     assert "-color_trc" in args and "smpte2084" in args
     assert "-color_primaries" in args and "bt2020" in args
     assert "-color_range" in args and "tv" in args
+
+    bsf = meta.to_bsf_args(codec="hevc")
+    assert "-bsf:v" in bsf
+    assert "colour_primaries=9" in bsf[1]
+    assert "transfer_characteristics=16" in bsf[1]
+    assert "matrix_coefficients=9" in bsf[1]

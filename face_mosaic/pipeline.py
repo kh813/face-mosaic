@@ -8,6 +8,7 @@ Pass 2: Render blur/mosaic with forward/backward padding and pipe directly to ff
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any, List
 import time
+import gc
 import numpy as np
 import cv2
 
@@ -17,6 +18,7 @@ from .detector import SCRFDDetector
 from .tracker import FaceTracker
 from .blur import FaceBlurrer
 from .color import compute_color_difference
+from .checkpoint import VideoCheckpoint
 
 class ProcessingPipeline:
     def __init__(self, config: AppConfig, model_dir: Optional[str] = None):
@@ -56,10 +58,12 @@ class ProcessingPipeline:
         output_path: Optional[str] = None,
         progress_callback: Optional[Callable[[str, int, int, float], None]] = None,
         preview_callback: Optional[Callable[..., None]] = None,
-        cancel_check: Optional[Callable[[], bool]] = None
+        cancel_check: Optional[Callable[[], bool]] = None,
+        resume: bool = True
     ) -> Dict[str, Any]:
         """
         Process a single video file.
+        Supports resume via incremental checkpoints and caching.
         Returns a dict of metrics and results.
         """
         start_time = time.time()
@@ -78,6 +82,10 @@ class ProcessingPipeline:
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
         info = probe_video(str(in_path))
+        needs_swap = abs(info.rotation) in (90, 270)
+        out_width = info.height if needs_swap else info.width
+        out_height = info.width if needs_swap else info.height
+
         tracker = FaceTracker(
             iou_threshold=self.config.tracking.iou_threshold,
             max_missing_frames=self.config.tracking.max_missing_frames,
@@ -86,63 +94,157 @@ class ProcessingPipeline:
             filters_config=self.config.filters
         )
 
-        # ----------------- PASS 1: Face Detection & Tracking -----------------
-        print(f"\n[Pass 1/2] Detecting faces in {in_path.name} ({info.width}x{info.height}, {info.fps:.2f} fps)...")
-        reader1 = PrefetchedVideoReader(str(in_path))
-        frame_idx = 0
-        pass1_start = time.time()
-        try:
-            for frame in reader1:
-                if cancel_check and cancel_check():
-                    return {
-                        "input": str(in_path),
-                        "status": "cancelled",
-                        "cancelled": True,
-                        "elapsed_seconds": time.time() - start_time
-                    }
+        checkpoint = VideoCheckpoint.for_video(out_path)
+        pass1_done = False
+        cached_detections = {}
 
-                # Filter detections by min_face_size
-                detections = self.detector.detect(frame)
-                valid_dets = [
-                    d for d in detections 
-                    if min(d.width, d.height) >= self.config.model.min_face_size
-                ]
-                tracker.update(frame_idx, frame, valid_dets)
+        # Check existing checkpoint
+        if resume and checkpoint.matches_input(
+            in_path,
+            model_name=self.config.model.name,
+            conf_threshold=self.config.model.conf_threshold
+        ):
+            if checkpoint.is_pass1_completed():
+                loaded_map = checkpoint.load_frame_bboxes_map()
+                if loaded_map is not None:
+                    print(f"[Resume] Found completed Pass 1 checkpoint for {in_path.name}. Skipping face detection!")
+                    frame_bboxes_map = loaded_map
+                    total_frames = len(frame_bboxes_map)
+                    pass1_done = True
+                    if progress_callback:
+                        progress_callback("Detection (Cached)", total_frames, total_frames, 0.0)
 
-                # Send preview frame in Pass 1 (every 2nd frame) with bounding boxes
-                if preview_callback and (frame_idx % 2 == 0):
-                    disp_frame = frame.copy()
-                    for d in valid_dets:
-                        x1, y1, x2, y2 = int(d.x1), int(d.y1), int(d.x2), int(d.y2)
-                        cv2.rectangle(disp_frame, (x1, y1), (x2, y2), (0, 230, 118), 2)
-                        conf_text = f"{d.score:.2f}"
-                        cv2.putText(disp_frame, conf_text, (x1, max(20, y1 - 6)),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 230, 118), 2)
-                    try:
+            if not pass1_done:
+                cached_detections = checkpoint.load_cached_detections()
+                if cached_detections:
+                    last_c = max(cached_detections.keys())
+                    print(f"[Resume] Resuming Pass 1 from frame {last_c + 1} (loaded {len(cached_detections)} cached frames).")
+        else:
+            if resume:
+                checkpoint.init_state(
+                    in_path,
+                    info.total_frames,
+                    info.width,
+                    info.height,
+                    info.fps,
+                    model_name=self.config.model.name,
+                    conf_threshold=self.config.model.conf_threshold
+                )
+
+        if not pass1_done:
+            # ----------------- PASS 1: Face Detection & Tracking -----------------
+            print(f"\n[Pass 1/2] Detecting faces in {in_path.name} ({out_width}x{out_height}, {info.fps:.2f} fps)...")
+            
+            # Optimal scale for Pass 1 detection (e.g. 640x360 for 4K 16:9) to maximize hardware throughput
+            input_sz = getattr(self.detector, "input_size", (640, 640))
+            if isinstance(input_sz, (tuple, list)) and len(input_sz) == 2:
+                det_w, det_h = int(input_sz[0]), int(input_sz[1])
+            else:
+                det_w, det_h = 640, 640
+
+            im_ratio = float(out_height) / out_width
+            model_ratio = float(det_h) / det_w
+            if im_ratio > model_ratio:
+                pass1_h = det_h
+                pass1_w = int(pass1_h / im_ratio)
+            else:
+                pass1_w = det_w
+                pass1_h = int(pass1_w * im_ratio)
+            pass1_w = max(2, pass1_w - (pass1_w % 2))
+            pass1_h = max(2, pass1_h - (pass1_h % 2))
+            use_scale = (pass1_w, pass1_h) if (out_width > pass1_w or out_height > pass1_h) else None
+
+            reader1 = PrefetchedVideoReader(str(in_path), scale=use_scale)
+            frame_idx = 0
+            pass1_start = time.time()
+            last_preview_time = 0.0
+            try:
+                for frame in reader1:
+                    if cancel_check and cancel_check():
+                        if resume:
+                            checkpoint.flush_detections(last_frame=frame_idx - 1)
+                        return {
+                            "input": str(in_path),
+                            "status": "cancelled",
+                            "cancelled": True,
+                            "elapsed_seconds": time.time() - start_time
+                        }
+
+                    if frame_idx in cached_detections:
+                        valid_dets = cached_detections[frame_idx]
+                    else:
+                        try:
+                            detections = self.detector.detect(frame, orig_shape=(out_height, out_width))
+                        except TypeError:
+                            detections = self.detector.detect(frame)
+                        valid_dets = [
+                            d for d in detections 
+                            if min(d.width, d.height) >= self.config.model.min_face_size
+                        ]
+                        if resume:
+                            checkpoint.append_detection(frame_idx, valid_dets)
+
+                    tracker.update(frame_idx, frame, valid_dets, orig_shape=(out_height, out_width))
+
+                    # Send preview frame in Pass 1 (throttled & memory-safe)
+                    now = time.time()
+                    if preview_callback and (frame_idx == 0 or now - last_preview_time >= 0.15):
+                        last_preview_time = now
+                        h, w = frame.shape[:2]
+                        target_w = min(640, w)
+                        target_h = max(1, int(h * (target_w / w)))
+                        scale = target_w / out_width
+                        if w == target_w and h == target_h:
+                            disp_frame = frame.copy()
+                        else:
+                            disp_frame = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+                        for d in valid_dets:
+                            x1 = int(round(d.x1 * scale))
+                            y1 = int(round(d.y1 * scale))
+                            x2 = int(round(d.x2 * scale))
+                            y2 = int(round(d.y2 * scale))
+                            cv2.rectangle(disp_frame, (x1, y1), (x2, y2), (0, 230, 118), 2)
+                            conf_text = f"{d.score:.2f}"
+                            cv2.putText(disp_frame, conf_text, (x1, max(15, y1 - 4)),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 230, 118), 1)
                         tot_str = str(info.total_frames) if info.total_frames else "?"
-                        preview_callback(disp_frame, f"Pass 1/2: Detection ({frame_idx + 1}/{tot_str})")
-                    except TypeError:
-                        preview_callback(disp_frame)
+                        try:
+                            preview_callback(disp_frame, f"Pass 1/2: Detection ({frame_idx + 1}/{tot_str})")
+                        except TypeError:
+                            preview_callback(disp_frame)
 
-                frame_idx += 1
-                if progress_callback:
-                    progress_callback("Detection", frame_idx, info.total_frames or frame_idx, time.time() - pass1_start)
-        finally:
-            reader1.close()
+                    frame_idx += 1
+                    if frame_idx % 1000 == 0:
+                        gc.collect()
 
-        total_frames = frame_idx
-        print(f"Pass 1 complete. Total frames: {total_frames}. Establishing tracklets...")
+                    if progress_callback:
+                        progress_callback("Detection", frame_idx, info.total_frames or frame_idx, time.time() - pass1_start)
+            finally:
+                reader1.close()
 
-        # Build blur bbox map for all frames (with padding and interpolation)
-        frame_bboxes_map = tracker.get_frame_bboxes_map(total_frames, reader1.out_width, reader1.out_height)
+            total_frames = frame_idx
+            print(f"Pass 1 complete. Total frames: {total_frames}. Establishing tracklets...")
+
+            # Build blur bbox map for all frames (with padding and interpolation)
+            frame_bboxes_map = tracker.get_frame_bboxes_map(total_frames, out_width, out_height)
+
+            if resume:
+                checkpoint.save_pass1_completed(frame_bboxes_map, total_frames)
 
         # ----------------- PASS 2: Blur Rendering & Encoding -----------------
         print(f"[Pass 2/2] Rendering blur/mosaic and encoding to {out_path.name}...")
+        temp_out_path = out_path.with_name(f"{out_path.stem}.part{out_path.suffix}")
+        if temp_out_path.exists():
+            try:
+                temp_out_path.unlink()
+            except Exception:
+                pass
+
         writer = VideoWriter(
-            output_path=str(out_path),
+            output_path=str(temp_out_path),
             input_info=info,
-            width=reader1.out_width,
-            height=reader1.out_height,
+            width=out_width,
+            height=out_height,
             fps=info.fps,
             codec=self.config.output.codec,
             crf=self.config.output.crf,
@@ -152,16 +254,17 @@ class ProcessingPipeline:
 
         reader2 = PrefetchedVideoReader(str(in_path))
         pass2_start = time.time()
-        
+        last_pass2_preview_time = 0.0
+
         mae_samples = []
         delta_e_samples = []
-        
+
         try:
             for f_idx, frame in enumerate(reader2):
                 if cancel_check and cancel_check():
-                    if out_path.exists():
+                    if temp_out_path.exists():
                         try:
-                            out_path.unlink()
+                            temp_out_path.unlink()
                         except Exception:
                             pass
                     return {
@@ -174,13 +277,19 @@ class ProcessingPipeline:
                 bboxes = frame_bboxes_map.get(f_idx, [])
                 blurred_frame, mask = self.blurrer.apply_blur(frame, bboxes)
                 writer.write_frame(blurred_frame)
-                
-                # Send preview frame (throttled to every 2nd frame)
-                if preview_callback and (f_idx % 2 == 0):
+
+                # Send preview frame (throttled & downscaled)
+                now = time.time()
+                if preview_callback and (f_idx == 0 or now - last_pass2_preview_time >= 0.15):
+                    last_pass2_preview_time = now
+                    h, w = blurred_frame.shape[:2]
+                    target_w = min(640, w)
+                    target_h = max(1, int(h * (target_w / w)))
+                    small_blurred = cv2.resize(blurred_frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
                     try:
-                        preview_callback(blurred_frame, f"Pass 2/2: Mosaic ({f_idx + 1}/{total_frames})")
+                        preview_callback(small_blurred, f"Pass 2/2: Mosaic ({f_idx + 1}/{total_frames})")
                     except TypeError:
-                        preview_callback(blurred_frame)
+                        preview_callback(small_blurred)
 
                 # Sample color difference on 5% of frames
                 if f_idx % max(1, total_frames // 20) == 0:
@@ -188,11 +297,27 @@ class ProcessingPipeline:
                     mae_samples.append(diff_metrics["mae"])
                     delta_e_samples.append(diff_metrics["delta_e_approx"])
 
+                if (f_idx + 1) % 1000 == 0:
+                    gc.collect()
+
                 if progress_callback:
                     progress_callback("Rendering", f_idx + 1, total_frames, time.time() - pass2_start)
         finally:
             reader2.close()
             writer.close()
+
+        # Atomic move from temp_out_path to out_path
+        if temp_out_path.exists():
+            if out_path.exists():
+                try:
+                    out_path.unlink()
+                except Exception:
+                    pass
+            temp_out_path.rename(out_path)
+
+        # Processing succeeded completely - clean up checkpoint
+        if resume:
+            checkpoint.cleanup()
 
         total_elapsed = time.time() - start_time
         fps_proc = total_frames / total_elapsed if total_elapsed > 0 else 0.0
@@ -210,6 +335,6 @@ class ProcessingPipeline:
             "color_delta_e": avg_delta_e,
             "status": "success"
         }
-        
+
         print(f"Finished {in_path.name} -> {out_path.name} in {total_elapsed:.2f}s ({fps_proc:.2f} fps). Color MAE: {avg_mae:.4f}")
         return result

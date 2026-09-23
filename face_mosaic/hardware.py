@@ -1,4 +1,4 @@
-﻿"""
+"""
 Hardware diagnostic and optimal model auto-selection module for face-mosaic.
 Detects CPU architecture, total RAM, and available GPU/NPU acceleration providers
 (DirectML, CoreML, CUDA) to choose the best SCRFD model.
@@ -65,14 +65,31 @@ def get_total_ram_gb() -> float:
     return 8.0  # Fallback assumption
 
 def get_available_gpu_providers() -> List[str]:
-    """Get active accelerated execution providers (DirectML, CoreML, CUDA, OpenVINO)."""
+    """Get active accelerated execution providers (OpenVINO, DirectML, CoreML, CUDA)."""
+    providers = []
+    try:
+        import openvino as ov
+        core = ov.Core()
+        devs = core.available_devices
+        if "GPU" in devs and "NPU" in devs:
+            providers.append("OpenVINO (GPU+NPU)")
+        elif "GPU" in devs:
+            providers.append("OpenVINO (GPU)")
+        elif "NPU" in devs:
+            providers.append("OpenVINO (NPU)")
+    except Exception:
+        pass
+
     try:
         import onnxruntime as ort
         available = ort.get_available_providers()
         accelerators = ["CoreMLExecutionProvider", "DmlExecutionProvider", "CUDAExecutionProvider", "OpenVINOExecutionProvider"]
-        return [p for p in accelerators if p in available]
+        for p in accelerators:
+            if p in available and p not in providers:
+                providers.append(p)
     except Exception:
-        return []
+        pass
+    return providers
 
 def detect_hardware_profile() -> HardwareProfile:
     """
