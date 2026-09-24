@@ -181,8 +181,16 @@ python -m face_mosaic.cli video.mp4 --config configs/config.default.yaml
   - テーブルの空き領域を右クリックしてコンテキストメニューから素早くファイル・フォルダを追加可能。
 - **実行ログ＆トラブルシューティング支援**:
   - GUI上のログ表示に加え、`logs/face_mosaic.log` にタイムスタンプ付きで詳細な処理ログおよびスタックトレースを自動保存。
-  - 「📋 Copy Log」ボタン（クリップボードへ一括コピー）および「📁 Open Log File」ボタン（ログファイルを即座に開く）を標準装備。
-- **ワンクリック再生＆出力フォルダ表示**: 処理完了後、「▶ Open Processed Video」および「📁 Open Output Folder」ボタンから即座に再生確認・フォルダオープンが可能です。
+- **ワンクリック再生＆出力フォルダ表示（視認性向上・変換中グレーアウト）**:
+  - 処理完了後、「▶ Open Processed Video」（エメラルドグリーン）および「📁 Open Output Folder」（iOSブルー）から即座に再生確認・フォルダオープンが可能です。
+  - 変換実行中は自動的に薄いグレーにグレーアウトされ、誤操作を確実に防止します。
+- **直感的な設定パネル配置（5行ペアリング）**:
+  - 思考順序および処理パイプラインに合わせて設定項目を論理的に整理：
+    1. **Model** & **Detection Confidence**（AI顔検出）
+    2. **Face Margin** & **Blur Strength**（モザイク範囲 & 強度）
+    3. **Blur Type** & **Blur Shape**（モザイク種別 & 丸型/四角型形状）
+    4. **Pad Backward** & **Pad Forward**（トラッキング補間フレーム）
+    5. **Output Codec** & **CRF Quality**（出力コーデック & 画質）
 
 ### 3.5 中断・再開機能（チェックポイント＆レジューム）とキャッシュ管理
 

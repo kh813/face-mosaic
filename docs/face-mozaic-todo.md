@@ -163,10 +163,15 @@
 - [x] 動画変換中（Processing）におけるボタン無効化の徹底
   - 変換実行中は常にボタンを無効化（グレーアウト）し誤クリックを防止
   - 変換中にテーブル選択が切り替わっても無効状態を堅持する安全ロジックを統合
-- [x] パラメータ設定グリッドの直感的再配置
-  - Row 0 に `Model` と `CRF Quality` を隣接配置（全体品質・モデル仕様を最上段に集約）
-  - Row 3 右の `Blur Type` と Row 4 右の `Blur Shape` を上下に近接配置（Blur 関連設定の直感的グルーピング）
+- [x] パラメータ設定グリッドの直感的再配置（全5行の論理的ペアリング）
+  - Row 0: `Model` & `Detection Confidence`（AI顔検出）
+  - Row 1: `Face Margin` & `Blur Strength`（モザイク範囲 & 強度）
+  - Row 2: `Blur Type` & `Blur Shape`（モザイク種別 & 丸型/四角型形状）
+  - Row 3: `Pad Backward` & `Pad Forward`（トラッキング補間フレーム）
+  - Row 4: `Output Codec` & `CRF Quality`（出力コーデック & 画質）
+- [x] 旧起動バッチ `run.bat` の完全廃止と `start-app.bat` への一本化
 - [x] 単体テストの追加と全75件パス（`tests/test_gui.py`）
+- [x] ドキュメント同期（`README.md`, `docs/face-mozaic-specs.md`, `docs/face-mozaic-todo.md`）
 
 ## バックログ（優先度未定・実運用次第で検討）
 
