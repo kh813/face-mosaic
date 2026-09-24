@@ -515,9 +515,11 @@ def test_subprocess_window_flags_windows_vs_unix(monkeypatch):
     # Windows check
     monkeypatch.setattr(sys, "platform", "win32")
     kwargs_win = get_subprocess_kwargs()
-    assert kwargs_win.get("creationflags") == subprocess.CREATE_NO_WINDOW
-    assert kwargs_win.get("startupinfo") is not None
-    assert kwargs_win["startupinfo"].wShowWindow == 0
+    assert kwargs_win.get("creationflags") in (getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000), 0x08000000)
+    if hasattr(subprocess, "STARTUPINFO"):
+        assert kwargs_win.get("startupinfo") is not None
+        assert kwargs_win["startupinfo"].wShowWindow == 0
+
 
     # macOS / Linux check
     monkeypatch.setattr(sys, "platform", "darwin")

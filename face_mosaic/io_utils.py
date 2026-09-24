@@ -23,14 +23,19 @@ def get_subprocess_kwargs() -> Dict[str, Any]:
     """
     Platform-specific subprocess kwargs to prevent console (cmd.exe)
     windows from popping up when spawning ffmpeg/ffprobe on Windows.
+    Safely resolves Windows-specific attributes when running on non-Windows platforms.
     """
     kwargs: Dict[str, Any] = {}
     if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-        si = subprocess.STARTUPINFO()
-        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        si.wShowWindow = 0  # SW_HIDE
-        kwargs["startupinfo"] = si
+        # 0x08000000 is CREATE_NO_WINDOW on Windows
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+        if startupinfo_cls is not None:
+            si = startupinfo_cls()
+            flags = getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+            si.dwFlags |= flags
+            si.wShowWindow = 0  # SW_HIDE
+            kwargs["startupinfo"] = si
     return kwargs
 
 _supported_encoders: Optional[set] = None
