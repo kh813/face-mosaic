@@ -1,0 +1,2 @@
+# Default requirements pointing to common and platform dependencies
+-r requirements/requirements-common.txt
