@@ -474,7 +474,7 @@ class MainWindow(QMainWindow):
             h.addStretch()
             return h
 
-        # ---- Row 0: Model / CRF Quality ----
+        # ---- Row 0: Model / Detection Confidence ----
         grid.addLayout(_label_with_info(
             "Model:",
             "<b>Detection Model</b><br>"
@@ -500,6 +500,136 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.combo_model, 0, 1)
 
         grid.addLayout(_label_with_info(
+            "Detection Confidence:",
+            "<b>検出信頼度 (Confidence Threshold)</b><br>"
+            "AIが「顔である」と判断するための信頼スコアの閾値（0〜1）。<br><br>"
+            "<b>低い (0.3〜0.4):</b> 見逃しが減る。小さい・遠い顔も拾いやすいが誤検出が増える可能性。<br>"
+            "<b>標準 (0.5):</b> バランス型。ほとんどの用途に適切。<br>"
+            "<b>高い (0.7〜0.9):</b> 明確な顔のみ検出。誤検出を減らしたい場合に使用。"
+        ), 0, 2)
+
+        self.spin_conf = QDoubleSpinBox()
+        self.spin_conf.setRange(0.1, 0.99)
+        self.spin_conf.setSingleStep(0.05)
+        self.spin_conf.setValue(0.50)
+        grid.addWidget(self.spin_conf, 0, 3)
+
+        # ---- Row 1: Face Margin / Blur Strength ----
+        grid.addLayout(_label_with_info(
+            "Face Margin (%):",
+            "<b>顔マージン (Face Margin)</b><br>"
+            "顔の検出バウンディングボックスを周囲に何%拡大してモザイク処理するか。<br><br>"
+            "値が大きいほど顔の周囲も広くぼかされ、輪郭や髪型からの特定を防ぎます。<br><br>"
+            "<b>10〜20%:</b> 顔ギリギリ。<br>"
+            "<b>30〜40%:</b> 標準。<br>"
+            "<b>50%〜:</b> 顔全体・頭部・顎下・髪型まで完全カバー ★推奨<br><br>"
+            "デフォルト: 50%"
+        ), 1, 0)
+
+        self.spin_margin = QSpinBox()
+        self.spin_margin.setRange(0, 100)
+        self.spin_margin.setSingleStep(5)
+        self.spin_margin.setValue(50)
+        grid.addWidget(self.spin_margin, 1, 1)
+
+        self.lbl_strength = QLabel("Blur Strength (odd):")
+        self._lbl_strength_info = _make_info(
+            "<b>ぼかし強度</b><br>"
+            "Gaussian モード時: カーネルサイズ（奇数）。大きいほど強くぼかします。<br>"
+            "　推奨: 51〜99 / デフォルト: 51<br><br>"
+            "Mosaic モード時: ブロックサイズ（ピクセル）。大きいほどモザイクが粗く強力になります。<br>"
+            "　推奨: 24〜36（判別不能）/ デフォルト: 28"
+        )
+        _row1_right = QHBoxLayout()
+        _row1_right.setContentsMargins(0, 0, 0, 0)
+        _row1_right.setSpacing(2)
+        _row1_right.addWidget(self.lbl_strength)
+        _row1_right.addWidget(self._lbl_strength_info)
+        _row1_right.addStretch()
+        grid.addLayout(_row1_right, 1, 2)
+
+        self.spin_strength = QSpinBox()
+        self.spin_strength.setRange(3, 199)
+        self.spin_strength.setSingleStep(2)
+        self.spin_strength.setValue(51)
+        grid.addWidget(self.spin_strength, 1, 3)
+
+        # ---- Row 2: Blur Type / Blur Shape ----
+        grid.addLayout(_label_with_info(
+            "Blur Type:",
+            "<b>ぼかし方式</b><br>"
+            "顔へのモザイク処理方式を選択します。<br><br>"
+            "<b>Gaussian (ガウスぼかし):</b> なめらかなぼかし。自然な仕上がりで目立ちにくい。<br>"
+            "<b>Mosaic (ピクセルモザイク):</b> ブロック状のモザイク。SNS・報道向けの定番スタイル。"
+        ), 2, 0)
+
+        self.combo_blur_type = QComboBox()
+        self.combo_blur_type.addItems(["Gaussian", "Mosaic"])
+        self.combo_blur_type.currentTextChanged.connect(self._on_blur_type_changed)
+        grid.addWidget(self.combo_blur_type, 2, 1)
+
+        grid.addLayout(_label_with_info(
+            "Blur Shape:",
+            "<b>モザイク・ぼかしの形状 (Blur Shape)</b><br>"
+            "顔にかけるモザイクやぼかしの輪郭形状を選択します。<br><br>"
+            "<b>Round (Ellipse) ★推奨:</b><br>"
+            "　顔の輪郭に沿った自然な楕円・丸型モザイク。背景への余計なかぶりを防ぎます。<br><br>"
+            "<b>Rectangle (Square):</b><br>"
+            "　従来の四角形モザイク。"
+        ), 2, 2)
+
+        self.combo_shape = QComboBox()
+        self.combo_shape.addItems(["Round (Ellipse) ★推奨", "Rectangle (Square)"])
+        grid.addWidget(self.combo_shape, 2, 3)
+
+        # ---- Row 3: Pad Backward / Pad Forward ----
+        grid.addLayout(_label_with_info(
+            "Pad Backward (frames):",
+            "<b>後方パディング (Pad Backward)</b><br>"
+            "顔が最初に検出されたフレームより何フレーム前からモザイクを適用するか。<br><br>"
+            "正面から歩いてくる人物は顔検出される前から映り込みます。<br>"
+            "この値を増やすことで、遠方から接近する人物の顔もしっかり先行モザイクできます。<br><br>"
+            "<b>推奨: 10〜16フレーム</b> (60fps の場合 ≈ 0.17〜0.27秒分)<br>"
+            "デフォルト: 12フレーム"
+        ), 3, 0)
+
+        self.spin_pad_back = QSpinBox()
+        self.spin_pad_back.setRange(0, 60)
+        self.spin_pad_back.setValue(12)
+        grid.addWidget(self.spin_pad_back, 3, 1)
+
+        grid.addLayout(_label_with_info(
+            "Pad Forward (frames):",
+            "<b>前方パディング (Pad Forward)</b><br>"
+            "顔が最後に検出されたフレームより何フレーム後までモザイクを継続するか。<br><br>"
+            "歩行中に一時的に顔が隠れてトラッカーが切れた場合も、<br>"
+            "この値のフレーム数だけモザイクを延長して継続します。<br><br>"
+            "<b>推奨: 6〜10フレーム</b> (30fps の場合 ≈ 0.2〜0.3秒分)<br>"
+            "デフォルト: 8フレーム"
+        ), 3, 2)
+
+        self.spin_pad_fwd = QSpinBox()
+        self.spin_pad_fwd.setRange(0, 30)
+        self.spin_pad_fwd.setValue(8)
+        grid.addWidget(self.spin_pad_fwd, 3, 3)
+
+        # ---- Row 4: Output Codec / CRF Quality ----
+        grid.addLayout(_label_with_info(
+            "Output Codec:",
+            "<b>出力コーデック</b><br>"
+            "変換後の動画ファイルの圧縮形式を選択します。<br><br>"
+            "<b>HEVC (H.265) ★推奨:</b> iPhone 4K動画のネイティブ形式。<br>"
+            "　同画質でH.264比 約40〜50%ファイルサイズを削減できます。<br>"
+            "　Windows 10以降・macOS・iOS で再生可能。<br><br>"
+            "<b>H.264:</b> 古い機器・ソフトウェアとの互換性が高い。<br>"
+            "　ファイルサイズは大きいが、どこでも再生できる安定性がある。"
+        ), 4, 0)
+
+        self.combo_codec = QComboBox()
+        self.combo_codec.addItems(["HEVC (H.265)", "H.264"])
+        grid.addWidget(self.combo_codec, 4, 1)
+
+        grid.addLayout(_label_with_info(
             "CRF Quality:",
             "<b>CRF (Constant Rate Factor) — 画質設定</b><br>"
             "数値が小さいほど高画質・大きいファイル。<br>"
@@ -510,142 +640,12 @@ class MainWindow(QMainWindow):
             "<b>24〜28:</b> ファイルサイズ優先<br>"
             "<b>28〜:</b> 目立つ品質劣化あり<br><br>"
             "デフォルト: 18（4K素材に推奨）"
-        ), 0, 2)
+        ), 4, 2)
 
         self.spin_crf = QSpinBox()
         self.spin_crf.setRange(0, 51)
         self.spin_crf.setValue(18)
-        grid.addWidget(self.spin_crf, 0, 3)
-
-        # ---- Row 1: Blur Strength / Confidence ----
-        self.lbl_strength = QLabel("Blur Strength (odd):")
-        self._lbl_strength_info = _make_info(
-            "<b>ぼかし強度</b><br>"
-            "Gaussian モード時: カーネルサイズ（奇数）。大きいほど強くぼかします。<br>"
-            "　推奨: 51〜99 / デフォルト: 51<br><br>"
-            "Mosaic モード時: ブロックサイズ（ピクセル）。大きいほどモザイクが粗く強力になります。<br>"
-            "　推奨: 24〜36（判別不能）/ デフォルト: 28"
-        )
-        _row1_left = QHBoxLayout()
-        _row1_left.setContentsMargins(0, 0, 0, 0)
-        _row1_left.setSpacing(2)
-        _row1_left.addWidget(self.lbl_strength)
-        _row1_left.addWidget(self._lbl_strength_info)
-        _row1_left.addStretch()
-        grid.addLayout(_row1_left, 1, 0)
-
-        self.spin_strength = QSpinBox()
-        self.spin_strength.setRange(3, 199)
-        self.spin_strength.setSingleStep(2)
-        self.spin_strength.setValue(51)
-        grid.addWidget(self.spin_strength, 1, 1)
-
-        grid.addLayout(_label_with_info(
-            "Detection Confidence:",
-            "<b>検出信頼度 (Confidence Threshold)</b><br>"
-            "AIが「顔である」と判断するための信頼スコアの閾値（0〜1）。<br><br>"
-            "<b>低い (0.3〜0.4):</b> 見逃しが減る。小さい・遠い顔も拾いやすいが誤検出が増える可能性。<br>"
-            "<b>標準 (0.5):</b> バランス型。ほとんどの用途に適切。<br>"
-            "<b>高い (0.7〜0.9):</b> 明確な顔のみ検出。誤検出を減らしたい場合に使用。"
-        ), 1, 2)
-
-        self.spin_conf = QDoubleSpinBox()
-        self.spin_conf.setRange(0.1, 0.99)
-        self.spin_conf.setSingleStep(0.05)
-        self.spin_conf.setValue(0.50)
-        grid.addWidget(self.spin_conf, 1, 3)
-
-        # ---- Row 2: Pad Backward / Forward ----
-        grid.addLayout(_label_with_info(
-            "Pad Backward (frames):",
-            "<b>後方パディング (Pad Backward)</b><br>"
-            "顔が最初に検出されたフレームより何フレーム前からモザイクを適用するか。<br><br>"
-            "正面から歩いてくる人物は顔検出される前から映り込みます。<br>"
-            "この値を増やすことで、遠方から接近する人物の顔もしっかり先行モザイクできます。<br><br>"
-            "<b>推奨: 10〜16フレーム</b> (60fps の場合 ≈ 0.17〜0.27秒分)<br>"
-            "デフォルト: 12フレーム"
-        ), 2, 0)
-
-        self.spin_pad_back = QSpinBox()
-        self.spin_pad_back.setRange(0, 60)
-        self.spin_pad_back.setValue(12)
-        grid.addWidget(self.spin_pad_back, 2, 1)
-
-        grid.addLayout(_label_with_info(
-            "Pad Forward (frames):",
-            "<b>前方パディング (Pad Forward)</b><br>"
-            "顔が最後に検出されたフレームより何フレーム後までモザイクを継続するか。<br><br>"
-            "歩行中に一時的に顔が隠れてトラッカーが切れた場合も、<br>"
-            "この値のフレーム数だけモザイクを延長して継続します。<br><br>"
-            "<b>推奨: 6〜10フレーム</b> (30fps の場合 ≈ 0.2〜0.3秒分)<br>"
-            "デフォルト: 8フレーム"
-        ), 2, 2)
-
-        self.spin_pad_fwd = QSpinBox()
-        self.spin_pad_fwd.setRange(0, 30)
-        self.spin_pad_fwd.setValue(8)
-        grid.addWidget(self.spin_pad_fwd, 2, 3)
-
-        # ---- Row 3: Codec / Blur Type ----
-        grid.addLayout(_label_with_info(
-            "Output Codec:",
-            "<b>出力コーデック</b><br>"
-            "変換後の動画ファイルの圧縮形式を選択します。<br><br>"
-            "<b>HEVC (H.265) ★推奨:</b> iPhone 4K動画のネイティブ形式。<br>"
-            "　同画質でH.264比 約40〜50%ファイルサイズを削減できます。<br>"
-            "　Windows 10以降・macOS・iOS で再生可能。<br><br>"
-            "<b>H.264:</b> 古い機器・ソフトウェアとの互換性が高い。<br>"
-            "　ファイルサイズは大きいが、どこでも再生できる安定性がある。"
-        ), 3, 0)
-
-        self.combo_codec = QComboBox()
-        self.combo_codec.addItems(["HEVC (H.265)", "H.264"])
-        grid.addWidget(self.combo_codec, 3, 1)
-
-        grid.addLayout(_label_with_info(
-            "Blur Type:",
-            "<b>ぼかし方式</b><br>"
-            "顔へのモザイク処理方式を選択します。<br><br>"
-            "<b>Gaussian (ガウスぼかし):</b> なめらかなぼかし。自然な仕上がりで目立ちにくい。<br>"
-            "<b>Mosaic (ピクセルモザイク):</b> ブロック状のモザイク。SNS・報道向けの定番スタイル。"
-        ), 3, 2)
-
-        self.combo_blur_type = QComboBox()
-        self.combo_blur_type.addItems(["Gaussian", "Mosaic"])
-        self.combo_blur_type.currentTextChanged.connect(self._on_blur_type_changed)
-        grid.addWidget(self.combo_blur_type, 3, 3)
-
-        # ---- Row 4: Face Margin ----
-        grid.addLayout(_label_with_info(
-            "Face Margin (%):",
-            "<b>顔マージン (Face Margin)</b><br>"
-            "顔の検出バウンディングボックスを周囲に何%拡大してモザイク処理するか。<br><br>"
-            "値が大きいほど顔の周囲も広くぼかされ、輪郭や髪型からの特定を防ぎます。<br><br>"
-            "<b>10〜20%:</b> 顔ギリギリ。<br>"
-            "<b>30〜40%:</b> 標準。<br>"
-            "<b>50%〜:</b> 顔全体・頭部・顎下・髪型まで完全カバー ★推奨<br><br>"
-            "デフォルト: 50%"
-        ), 4, 0)
-
-        self.spin_margin = QSpinBox()
-        self.spin_margin.setRange(0, 100)
-        self.spin_margin.setSingleStep(5)
-        self.spin_margin.setValue(50)
-        grid.addWidget(self.spin_margin, 4, 1)
-
-        grid.addLayout(_label_with_info(
-            "Blur Shape:",
-            "<b>モザイク・ぼかしの形状 (Blur Shape)</b><br>"
-            "顔にかけるモザイクやぼかしの輪郭形状を選択します。<br><br>"
-            "<b>Round (Ellipse) ★推奨:</b><br>"
-            "　顔の輪郭に沿った自然な楕円・丸型モザイク。背景への余計なかぶりを防ぎます。<br><br>"
-            "<b>Rectangle (Square):</b><br>"
-            "　従来の四角形モザイク。"
-        ), 4, 2)
-
-        self.combo_shape = QComboBox()
-        self.combo_shape.addItems(["Round (Ellipse) ★推奨", "Rectangle (Square)"])
-        grid.addWidget(self.combo_shape, 4, 3)
+        grid.addWidget(self.spin_crf, 4, 3)
 
         left_layout.addWidget(param_group)
 
