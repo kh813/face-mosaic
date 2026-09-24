@@ -32,10 +32,17 @@ class ProcessingPipeline:
         self.model_path = base_model_dir / config.model.name
 
         if not self.model_path.exists():
-            raise FileNotFoundError(
-                f"Model file not found at {self.model_path}. "
-                f"Please run 'python scripts/download_models.py' first."
-            )
+            # Fallback to any available SCRFD model in base_model_dir if present
+            candidates = sorted(list(base_model_dir.glob("scrfd_*.onnx")))
+            if candidates:
+                self.model_path = candidates[0]
+                print(f"Warning: {config.model.name} not found. Falling back to: {self.model_path.name}")
+            else:
+                raise FileNotFoundError(
+                    f"Model file not found at {self.model_path}. "
+                    f"Please run 'python scripts/download_models.py' first."
+                )
+
 
         print(f"Loading SCRFD Face Detector: {self.model_path.name}")
         self.detector = SCRFDDetector(
