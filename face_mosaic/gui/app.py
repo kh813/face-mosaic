@@ -474,7 +474,7 @@ class MainWindow(QMainWindow):
             h.addStretch()
             return h
 
-        # ---- Row 0: Model / Blur Type ----
+        # ---- Row 0: Model / CRF Quality ----
         grid.addLayout(_label_with_info(
             "Model:",
             "<b>Detection Model</b><br>"
@@ -500,17 +500,22 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.combo_model, 0, 1)
 
         grid.addLayout(_label_with_info(
-            "Blur Type:",
-            "<b>ぼかし方式</b><br>"
-            "顔へのモザイク処理方式を選択します。<br><br>"
-            "<b>Gaussian (ガウスぼかし):</b> なめらかなぼかし。自然な仕上がりで目立ちにくい。<br>"
-            "<b>Mosaic (ピクセルモザイク):</b> ブロック状のモザイク。SNS・報道向けの定番スタイル。"
+            "CRF Quality:",
+            "<b>CRF (Constant Rate Factor) — 画質設定</b><br>"
+            "数値が小さいほど高画質・大きいファイル。<br>"
+            "数値が大きいほど低画質・小さいファイル。<br><br>"
+            "<b>0:</b> ロスレス（非常に大きい）<br>"
+            "<b>16〜18:</b> 高画質・ほぼ視覚的ロスレス ★推奨<br>"
+            "<b>20〜22:</b> バランス良好（実用的）<br>"
+            "<b>24〜28:</b> ファイルサイズ優先<br>"
+            "<b>28〜:</b> 目立つ品質劣化あり<br><br>"
+            "デフォルト: 18（4K素材に推奨）"
         ), 0, 2)
 
-        self.combo_blur_type = QComboBox()
-        self.combo_blur_type.addItems(["Gaussian", "Mosaic"])
-        self.combo_blur_type.currentTextChanged.connect(self._on_blur_type_changed)
-        grid.addWidget(self.combo_blur_type, 0, 3)
+        self.spin_crf = QSpinBox()
+        self.spin_crf.setRange(0, 51)
+        self.spin_crf.setValue(18)
+        grid.addWidget(self.spin_crf, 0, 3)
 
         # ---- Row 1: Blur Strength / Confidence ----
         self.lbl_strength = QLabel("Blur Strength (odd):")
@@ -581,7 +586,7 @@ class MainWindow(QMainWindow):
         self.spin_pad_fwd.setValue(8)
         grid.addWidget(self.spin_pad_fwd, 2, 3)
 
-        # ---- Row 3: Codec / CRF ----
+        # ---- Row 3: Codec / Blur Type ----
         grid.addLayout(_label_with_info(
             "Output Codec:",
             "<b>出力コーデック</b><br>"
@@ -598,22 +603,17 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.combo_codec, 3, 1)
 
         grid.addLayout(_label_with_info(
-            "CRF Quality:",
-            "<b>CRF (Constant Rate Factor) — 画質設定</b><br>"
-            "数値が小さいほど高画質・大きいファイル。<br>"
-            "数値が大きいほど低画質・小さいファイル。<br><br>"
-            "<b>0:</b> ロスレス（非常に大きい）<br>"
-            "<b>16〜18:</b> 高画質・ほぼ視覚的ロスレス ★推奨<br>"
-            "<b>20〜22:</b> バランス良好（実用的）<br>"
-            "<b>24〜28:</b> ファイルサイズ優先<br>"
-            "<b>28〜:</b> 目立つ品質劣化あり<br><br>"
-            "デフォルト: 18（4K素材に推奨）"
+            "Blur Type:",
+            "<b>ぼかし方式</b><br>"
+            "顔へのモザイク処理方式を選択します。<br><br>"
+            "<b>Gaussian (ガウスぼかし):</b> なめらかなぼかし。自然な仕上がりで目立ちにくい。<br>"
+            "<b>Mosaic (ピクセルモザイク):</b> ブロック状のモザイク。SNS・報道向けの定番スタイル。"
         ), 3, 2)
 
-        self.spin_crf = QSpinBox()
-        self.spin_crf.setRange(0, 51)
-        self.spin_crf.setValue(18)
-        grid.addWidget(self.spin_crf, 3, 3)
+        self.combo_blur_type = QComboBox()
+        self.combo_blur_type.addItems(["Gaussian", "Mosaic"])
+        self.combo_blur_type.currentTextChanged.connect(self._on_blur_type_changed)
+        grid.addWidget(self.combo_blur_type, 3, 3)
 
         # ---- Row 4: Face Margin ----
         grid.addLayout(_label_with_info(
@@ -698,12 +698,56 @@ class MainWindow(QMainWindow):
         action_layout = QHBoxLayout()
         self.btn_open_video = QPushButton("▶ Open Processed Video")
         self.btn_open_video.setEnabled(False)
-        self.btn_open_video.setStyleSheet("height: 32px; font-weight: bold; background-color: #2c2c2e; border-radius: 4px;")
+        self.btn_open_video.setToolTip("処理完了した動画を再生します（変換中は無効化されます）")
+        self.btn_open_video.setStyleSheet("""
+            QPushButton {
+                height: 32px;
+                font-weight: bold;
+                background-color: #34C759;
+                color: #FFFFFF;
+                border: 1px solid #28A745;
+                border-radius: 4px;
+                padding: 0 10px;
+            }
+            QPushButton:hover {
+                background-color: #2DB84D;
+            }
+            QPushButton:pressed {
+                background-color: #24963E;
+            }
+            QPushButton:disabled {
+                background-color: #E5E5EA;
+                color: #8E8E93;
+                border: 1px solid #D1D1D6;
+            }
+        """)
         self.btn_open_video.clicked.connect(self._open_processed_video)
 
         self.btn_open_folder = QPushButton("📁 Open Output Folder")
         self.btn_open_folder.setEnabled(False)
-        self.btn_open_folder.setStyleSheet("height: 32px; background-color: #2c2c2e; border-radius: 4px;")
+        self.btn_open_folder.setToolTip("処理完了した動画の保存先フォルダを開きます（変換中は無効化されます）")
+        self.btn_open_folder.setStyleSheet("""
+            QPushButton {
+                height: 32px;
+                font-weight: bold;
+                background-color: #007AFF;
+                color: #FFFFFF;
+                border: 1px solid #0062CC;
+                border-radius: 4px;
+                padding: 0 10px;
+            }
+            QPushButton:hover {
+                background-color: #0069D9;
+            }
+            QPushButton:pressed {
+                background-color: #0051A8;
+            }
+            QPushButton:disabled {
+                background-color: #E5E5EA;
+                color: #8E8E93;
+                border: 1px solid #D1D1D6;
+            }
+        """)
         self.btn_open_folder.clicked.connect(self._open_output_folder)
 
         action_layout.addWidget(self.btn_open_video)
@@ -1236,6 +1280,12 @@ class MainWindow(QMainWindow):
         self._update_output_button_states()
 
     def _update_output_button_states(self):
+        # If conversion is currently running, keep buttons disabled (greyed out)
+        if self.worker is not None and self.worker.isRunning():
+            self.btn_open_video.setEnabled(False)
+            self.btn_open_folder.setEnabled(False)
+            return
+
         selected_rows = {idx.row() for idx in self.table_queue.selectedIndexes()}
         for row in selected_rows:
             if row < len(self.queue_items):

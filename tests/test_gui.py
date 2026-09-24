@@ -747,6 +747,54 @@ def test_gui_queue_reorder_with_active_processing_sync(qapp, tmp_path):
     assert [item.path.name for item in window.worker.items] == ["vid1.mp4", "vid3.mp4", "vid2.mp4"]
 
 
+def test_gui_preview_action_buttons_styling_and_disabled_during_worker(qapp, tmp_path):
+    from unittest.mock import MagicMock
+    from face_mosaic.gui.app import QueueItem
+
+    window = MainWindow()
+
+    # Verify styling contains readable text color (#FFFFFF) and disabled state
+    video_qss = window.btn_open_video.styleSheet()
+    folder_qss = window.btn_open_folder.styleSheet()
+    assert "#FFFFFF" in video_qss
+    assert "#E5E5EA" in video_qss
+    assert ":disabled" in video_qss
+    assert "#FFFFFF" in folder_qss
+    assert "#E5E5EA" in folder_qss
+    assert ":disabled" in folder_qss
+
+    # Initial state: no completed video, buttons disabled
+    assert not window.btn_open_video.isEnabled()
+    assert not window.btn_open_folder.isEnabled()
+
+    # Add completed video item
+    completed_video = tmp_path / "out.mp4"
+    completed_video.touch()
+    item = QueueItem(path=tmp_path / "in.mp4", status="Completed", output_path=str(completed_video))
+    window.queue_items.append(item)
+
+    # When idle, update enables buttons
+    window._update_output_button_states()
+    assert window.btn_open_video.isEnabled()
+    assert window.btn_open_folder.isEnabled()
+
+    # When worker is actively running, buttons MUST be disabled (greyed out)
+    mock_worker = MagicMock()
+    mock_worker.isRunning.return_value = True
+    window.worker = mock_worker
+
+    window._update_output_button_states()
+    assert not window.btn_open_video.isEnabled()
+    assert not window.btn_open_folder.isEnabled()
+
+    # When worker finishes, buttons become enabled again
+    mock_worker.isRunning.return_value = False
+    window._update_output_button_states()
+    assert window.btn_open_video.isEnabled()
+    assert window.btn_open_folder.isEnabled()
+
+
+
 
 
 
