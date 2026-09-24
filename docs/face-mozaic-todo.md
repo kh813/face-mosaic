@@ -113,7 +113,7 @@
 
 ## Phase 3.3: マルチプラットフォーム（Windows/macOS）リリース自動化・配布ZIPパッケージ整備
 
-- [x] Windows 向け起動バッチのリネームと整理（`start-app.bat` 新設、初回進捗表示 / 2回目以降サイレント起動、`run.bat` 互換転送）
+- [x] Windows 向け起動バッチのリネームと整理（`start-app.bat` 新設・一本化、初回進捗表示 / 2回目以降サイレント起動、旧 `run.bat` 廃止）
 - [x] macOS 向けワンクリックランナーの実装（`start-app.command` および `scripts/setup_and_run_mac.sh`、Python3/venv/ffmpeg自動検証、モデルダウンロードからGUI起動まで自動化）
 - [x] GitHub Actions リリースワークフロー（`.github/workflows/release.yml`）の刷新
   - Windows用ジョブ（`package-windows`）：Windows専用ファイルのみをステージングして `face-mosaic-windows.zip` 生成

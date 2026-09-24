@@ -48,7 +48,6 @@ Phase 2の内容（OpenVINO Execution Provider経由でのNPU実行、DirectML E
 - **パッケージ内容の分離（不要ファイルの徹底排除）**：
   - **Windows版 (`face-mosaic-windows.zip`)**:
     - `start-app.bat`（ワンクリック起動・初回進捗表示 / 2回目以降サイレント起動）
-    - `run.bat`（互換用フォワーダー）
     - `scripts/setup_and_run.ps1`, `scripts/run_gui.vbs`, `scripts/download_models.py`, `scripts/benchmark.py`
     - `requirements/requirements-windows.txt`, `requirements/requirements-common.txt`
     - `face_mosaic/`, `configs/`, `assets/`, `LICENSE`, `README.md`
@@ -394,7 +393,7 @@ PySide6（Qt for Python）を用いたデスクトップGUIを実装完了。
    - **完了/停止後**: 自動的に待機状態へ復帰。
 
 4. **Windows 完全サイレント起動＆ウィンドウポップアップ抑制**:
-   - リポジトリ直下の `run.bat` から `scripts/run_gui.vbs` を経由して完全非表示で起動。
+   - リポジトリ直下の `start-app.bat` から `scripts/run_gui.vbs` を経由して完全非表示で起動。
    - 変換中の FFmpeg / FFprobe / QSV コーデック判定を含むすべての子プロセスに `CREATE_NO_WINDOW` および `SW_HIDE` を適用し、黒いコマンド画面のポップアップを完全排除。
 
 5. **スペック自動診断＆モデル自動選択**:

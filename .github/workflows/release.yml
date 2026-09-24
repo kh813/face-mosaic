@@ -21,7 +21,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path staging/face-mosaic -Force | Out-Null
-          Copy-Item start-app.bat, run.bat, LICENSE, README.md staging/face-mosaic/
+          Copy-Item start-app.bat, LICENSE, README.md staging/face-mosaic/
           Copy-Item -Recurse face_mosaic staging/face-mosaic/
           Copy-Item -Recurse configs staging/face-mosaic/
           if (Test-Path assets) { Copy-Item -Recurse assets staging/face-mosaic/ }
