@@ -36,6 +36,15 @@ jobs:
 
       - name: Run pytest
         run: |
-          QT_QPA_PLATFORM=offscreen pytest -v --tb=short
+          set +e
+          QT_QPA_PLATFORM=offscreen pytest -v --tb=short > pytest.log 2>&1
+          EXIT_CODE=$?
+          cat pytest.log
+          echo "### Pytest Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat pytest.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          exit $EXIT_CODE
+
 
 
