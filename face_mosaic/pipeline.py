@@ -76,7 +76,13 @@ class ProcessingPipeline:
         if output_path is None:
             out_dir = Path(self.config.output.output_dir) if self.config.output.output_dir else in_path.parent
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_filename = f"{in_path.stem}{self.config.output.filename_suffix}.mp4"
+            param_str = ""
+            if self.config.output.append_params_to_filename:
+                t_abbr = "G" if self.config.blur.type == "gaussian" else "M"
+                str_val = self.config.blur.strength if self.config.blur.type == "gaussian" else self.config.blur.mosaic_block_size
+                m_val = int(self.config.blur.margin_x * 100)
+                param_str = f"_({t_abbr}{str_val}-M{m_val}-CRF{self.config.output.crf})"
+            out_filename = f"{in_path.stem}{self.config.output.filename_suffix}{param_str}.mp4"
             out_path = out_dir / out_filename
         else:
             out_path = Path(output_path).resolve()
@@ -250,7 +256,8 @@ class ProcessingPipeline:
             codec=self.config.output.codec,
             crf=self.config.output.crf,
             preset=self.config.output.preset,
-            preserve_color_tags=self.config.output.preserve_color_tags
+            preserve_color_tags=self.config.output.preserve_color_tags,
+            bit_depth=self.config.output.bit_depth
         )
 
         reader2 = PrefetchedVideoReader(str(in_path))

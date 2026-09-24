@@ -55,8 +55,11 @@ filters:
 # Output & encoding settings
 output:
   codec: "hevc"                  # Options: "hevc" (libx265) or "h264" (libx264)
-  crf: 18                        # Constant Rate Factor (18-20 recommended for high quality)
+  crf: 23                        # Constant Rate Factor (23 recommended for optimal balance and ~50% size reduction, 18 for archival quality)
   preset: "medium"               # Encoder preset (ultrafast, fast, medium, slow)
+  bit_depth: "auto"              # Options: "auto" (match input), "8bit" (force 8-bit for size & compatibility), "10bit"
   preserve_color_tags: true      # Preserve BT.2020 / BT.709 color tags and ranges
   output_dir: ""                 # Default is same directory as input file
   filename_suffix: "_blurred"    # Output suffix before extension (e.g. foo_blurred.mp4)
+  append_params_to_filename: false # Append blur and CRF parameters to output filename (e.g. foo_blurred_(G51-M50-CRF23).mp4)
+

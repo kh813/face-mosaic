@@ -374,16 +374,18 @@ class VideoWriter:
         height: int,
         fps: float,
         codec: str = "hevc",
-        crf: int = 18,
+        crf: int = 23,
         preset: str = "medium",
         preserve_color_tags: bool = True,
-        use_hardware_accel: bool = True
+        use_hardware_accel: bool = True,
+        bit_depth: str = "auto"
     ):
         self.output_path = str(output_path)
         self.input_info = input_info
         self.width = width
         self.height = height
         self.fps = fps
+        self.bit_depth = bit_depth
         
         QSV_PRESET_MAP = {
             "ultrafast": "veryfast",
@@ -408,8 +410,16 @@ class VideoWriter:
              - 'nvenc': NVIDIA NVENC
              - 'cpu': libx265 / libx264 software encoder (multi-threaded)
             """
-            is_10bit = bool(input_info.color_metadata and input_info.color_metadata.pix_fmt in ("yuv420p10le", "p010le", "p010"))
             is_hevc = codec.lower() in ("hevc", "h265", "x265")
+            input_is_10bit = bool(input_info.color_metadata and input_info.color_metadata.pix_fmt in ("yuv420p10le", "p010le", "p010"))
+            
+            if bit_depth.lower() == "8bit":
+                is_10bit = False
+            elif bit_depth.lower() == "10bit":
+                is_10bit = True
+            else:  # "auto"
+                # Keep 10-bit for HEVC if input was 10-bit; for H.264 default to 8-bit for maximum compatibility
+                is_10bit = input_is_10bit and is_hevc
 
             if hw_mode == "videotoolbox":
                 enc = "hevc_videotoolbox" if is_hevc else "h264_videotoolbox"
@@ -458,8 +468,11 @@ class VideoWriter:
             c.extend(["-r", f"{fps:.4f}"])
             if preserve_color_tags and input_info.color_metadata:
                 c.extend(input_info.color_metadata.to_ffmpeg_args())
-                if is_hevc:
+                if is_hevc and is_10bit:
                     c.extend(input_info.color_metadata.to_bsf_args(codec))
+            # Enable FastStart for MP4 / MOV containers for instant seeking & web playback
+            if Path(self.output_path).suffix.lower() in (".mp4", ".mov", ".m4v"):
+                c.extend(["-movflags", "+faststart"])
             c.append(self.output_path)
             return c
 

@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QFileDialog, QProgressBar, QTextEdit,
     QComboBox, QSpinBox, QDoubleSpinBox, QGroupBox, QGridLayout,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QMenu, QSizePolicy
+    QAbstractItemView, QMenu, QSizePolicy, QCheckBox
 )
 
 from face_mosaic.config import AppConfig
@@ -634,18 +634,70 @@ class MainWindow(QMainWindow):
             "<b>CRF (Constant Rate Factor) — 画質設定</b><br>"
             "数値が小さいほど高画質・大きいファイル。<br>"
             "数値が大きいほど低画質・小さいファイル。<br><br>"
-            "<b>0:</b> ロスレス（非常に大きい）<br>"
-            "<b>16〜18:</b> 高画質・ほぼ視覚的ロスレス ★推奨<br>"
-            "<b>20〜22:</b> バランス良好（実用的）<br>"
-            "<b>24〜28:</b> ファイルサイズ優先<br>"
-            "<b>28〜:</b> 目立つ品質劣化あり<br><br>"
-            "デフォルト: 18（4K素材に推奨）"
+            "<b>標準 (CRF 23) ★推奨:</b> 視覚的劣化なし・容量約50%削減<br>"
+            "<b>最高画質 (CRF 18):</b> マスター保存向け（大容量）<br>"
+            "<b>容量優先 (CRF 26):</b> さらに軽量化<br>"
+            "<b>カスタム:</b> 0〜51まで自由指定"
         ), 4, 2)
 
+        crf_h_layout = QHBoxLayout()
+        crf_h_layout.setContentsMargins(0, 0, 0, 0)
+        crf_h_layout.setSpacing(4)
+        self.combo_crf_preset = QComboBox()
+        self.combo_crf_preset.addItems([
+            "標準 (23 - 推奨)",
+            "最高画質 (18)",
+            "容量優先 (26)",
+            "カスタム"
+        ])
         self.spin_crf = QSpinBox()
         self.spin_crf.setRange(0, 51)
-        self.spin_crf.setValue(18)
-        grid.addWidget(self.spin_crf, 4, 3)
+        self.spin_crf.setValue(23)
+        self.spin_crf.setFixedWidth(52)
+
+        def _on_crf_preset_changed(idx: int):
+            presets = [23, 18, 26]
+            if idx < len(presets):
+                self.spin_crf.blockSignals(True)
+                self.spin_crf.setValue(presets[idx])
+                self.spin_crf.blockSignals(False)
+
+        def _on_spin_crf_changed(val: int):
+            preset_map = {23: 0, 18: 1, 26: 2}
+            self.combo_crf_preset.blockSignals(True)
+            self.combo_crf_preset.setCurrentIndex(preset_map.get(val, 3))
+            self.combo_crf_preset.blockSignals(False)
+
+        self.combo_crf_preset.currentIndexChanged.connect(_on_crf_preset_changed)
+        self.spin_crf.valueChanged.connect(_on_spin_crf_changed)
+
+        crf_h_layout.addWidget(self.combo_crf_preset, stretch=1)
+        crf_h_layout.addWidget(self.spin_crf)
+        grid.addLayout(crf_h_layout, 4, 3)
+
+        # ---- Row 5: Bit Depth / Param Suffix ----
+        grid.addLayout(_label_with_info(
+            "Bit Depth:",
+            "<b>ビット深度 (カラー深度)</b><br>"
+            "<b>Auto (自動) ★推奨:</b> 元動画の深度を維持（HEVC時10-bit HDR維持）。<br>"
+            "<b>8-bit:</b> iPhone 10-bit HDR動画でも8-bitに変換し、ファイルサイズ削減と再生互換性を最大化。<br>"
+            "<b>10-bit:</b> 階調重視の10-bitエンコードを強制。"
+        ), 5, 0)
+
+        self.combo_bit_depth = QComboBox()
+        self.combo_bit_depth.addItems(["Auto (自動)", "8-bit (互換性&軽量化)", "10-bit (高階調)"])
+        grid.addWidget(self.combo_bit_depth, 5, 1)
+
+        grid.addLayout(_label_with_info(
+            "Filename Option:",
+            "<b>ファイル名への設定情報付加</b><br>"
+            "チェックを入れると、出力ファイル名に適用したぼかし強度・マージン・CRFを自動埋め込みします。<br>"
+            "例: <code>_blurred_(G51-M50-CRF23).mp4</code>"
+        ), 5, 2)
+
+        self.chk_append_params = QCheckBox("パラメータを付与")
+        self.chk_append_params.setChecked(False)
+        grid.addWidget(self.chk_append_params, 5, 3)
 
         left_layout.addWidget(param_group)
 
@@ -1391,6 +1443,16 @@ class MainWindow(QMainWindow):
             codec_str = "hevc" if "HEVC" in self.combo_codec.currentText() else "h264"
             cfg.output.codec = codec_str
             cfg.output.crf = self.spin_crf.value()
+
+            bit_depth_text = self.combo_bit_depth.currentText().lower()
+            if "8-bit" in bit_depth_text:
+                cfg.output.bit_depth = "8bit"
+            elif "10-bit" in bit_depth_text:
+                cfg.output.bit_depth = "10bit"
+            else:
+                cfg.output.bit_depth = "auto"
+
+            cfg.output.append_params_to_filename = self.chk_append_params.isChecked()
 
             self.btn_start.setText("⏹ Stop Processing")
             self.btn_start.setStyleSheet("font-size: 14px; font-weight: bold; height: 38px; background-color: #FF3B30; color: white; border-radius: 6px;")

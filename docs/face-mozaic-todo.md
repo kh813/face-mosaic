@@ -173,6 +173,22 @@
 - [x] 単体テストの追加と全75件パス（`tests/test_gui.py`）
 - [x] ドキュメント同期（`README.md`, `docs/face-mozaic-specs.md`, `docs/face-mozaic-todo.md`）
 
+## Phase 3.7: 動画エンコード最適化・ファイルサイズ削減＆互換性向上（CRF 23標準化・8-bit出力・FastStart・パラメータ埋め込み）
+
+- [x] CRF デフォルト値の見直しとプリセット化
+  - デフォルトを CRF 18 から **CRF 23**（視覚的ロスレスを維持しファイルサイズを約50〜60%削減）に変更
+  - GUI / CLI に品質プリセット（標準: 23、最高画質: 18、容量優先: 26）およびカスタム入力を整備
+- [x] 10-bit HDR 動画の 8-bit 出力制御 (`bit_depth`)
+  - `OutputConfig.bit_depth`（`auto` / `8bit` / `10bit`）の追加
+  - iPhone 10-bit HDR動画でも 8-bit (`yuv420p` / `nv12`) へ変換して容量削減＆再生互換性最大化（BT.2020 / HLGカラータグは維持）
+  - H.264 出力時は自動的に互換性の高い 8-bit に統一
+- [x] MP4 / MOV の Web/ストリーミング高速化フラグ (`-movflags +faststart`)
+  - 動画ヘッダー（moov atom）を先頭配置し、大容量4K動画の即時再生・シーク速度を向上
+- [x] 出力ファイル名へのパラメータ埋め込みオプション (`append_params_to_filename`)
+  - 有効時、ファイル名末尾にモザイク設定等を自動付与（例: `IMG_2382_blurred_(G51-M50-CRF23).mp4`）
+- [x] ドキュメント同期（`README.md`, `docs/face-mozaic-specs.md`, `docs/face-mozaic-todo.md`, `configs/config.default.yaml`）
+- [x] 単体テストの追加・更新と全件パス
+
 ## バックログ（優先度未定・実運用次第で検討）
 
 - [ ] 実際に発生した誤検知フレームを蓄積し、検出モデルのハードネガティブ追加学習

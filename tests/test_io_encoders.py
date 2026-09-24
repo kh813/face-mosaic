@@ -111,4 +111,54 @@ def test_videowriter_cpu_threads_fallback():
         assert "libx265" in called_cmd
         assert "-threads" in called_cmd
         assert "0" in called_cmd
+        assert "-movflags" in called_cmd
+        assert "+faststart" in called_cmd
         writer.close()
+
+def test_videowriter_faststart_and_bit_depth_8bit():
+    mock_input_info = MagicMock(spec=VideoInfo)
+    mock_input_info.filepath = "input.mov"
+    mock_input_info.has_audio = False
+    mock_input_info.color_metadata = ColorMetadata(
+        color_space="bt2020nc",
+        color_primaries="bt2020",
+        color_transfer="arib-std-b67",
+        color_range="tv",
+        pix_fmt="yuv420p10le"
+    )
+
+    with patch("subprocess.Popen") as mock_popen, \
+         patch("face_mosaic.io_utils.get_ffmpeg_cmd", return_value="ffmpeg"), \
+         patch("face_mosaic.io_utils.supports_videotoolbox", return_value=False), \
+         patch("face_mosaic.io_utils.supports_qsv", return_value=False), \
+         patch("face_mosaic.io_utils.supports_amf", return_value=False), \
+         patch("face_mosaic.io_utils.supports_nvenc", return_value=False):
+        
+        mock_popen.return_value = _create_mock_process()
+
+        # Force 8-bit output even though input is 10-bit
+        writer = VideoWriter(
+            output_path="output_8bit.mp4",
+            input_info=mock_input_info,
+            width=3840,
+            height=2160,
+            fps=60.0,
+            codec="hevc",
+            crf=23,
+            bit_depth="8bit"
+        )
+
+        called_cmd = mock_popen.call_args[0][0]
+        assert "-movflags" in called_cmd
+        assert "+faststart" in called_cmd
+        
+        # Check output pix_fmt (the one after encoder args)
+        pix_indices = [i for i, x in enumerate(called_cmd) if x == "-pix_fmt"]
+        assert len(pix_indices) >= 2
+        # Second -pix_fmt is the output pix_fmt
+        assert called_cmd[pix_indices[1] + 1] == "yuv420p"
+        assert "-crf" in called_cmd
+        crf_idx = called_cmd.index("-crf")
+        assert called_cmd[crf_idx + 1] == "23"
+        writer.close()
+

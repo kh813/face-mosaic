@@ -11,7 +11,9 @@ def test_default_config():
     assert config.tracking.padding_backward == 12
     assert config.tracking.padding_forward == 8
     assert config.output.codec == "hevc"
-    assert config.output.crf == 18
+    assert config.output.crf == 23
+    assert config.output.bit_depth == "auto"
+    assert config.output.append_params_to_filename is False
 
 def test_load_yaml_config():
     yaml_data = {

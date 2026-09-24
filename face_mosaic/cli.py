@@ -122,7 +122,18 @@ def main():
         "--crf",
         type=int,
         default=None,
-        help="Constant Rate Factor (default: 18)"
+        help="Constant Rate Factor (default: 23, lower means higher quality/larger size)"
+    )
+    parser.add_argument(
+        "--bit-depth",
+        choices=["auto", "8bit", "10bit"],
+        default=None,
+        help="Output bit depth: auto (match input), 8bit (reduce size & maximize compatibility), 10bit"
+    )
+    parser.add_argument(
+        "--append-params",
+        action="store_true",
+        help="Append blur and quality parameters to output filename (e.g. _(G51-M50-CRF23))"
     )
     parser.add_argument(
         "--output-dir", "-o",
@@ -183,6 +194,10 @@ def main():
         config.output.codec = args.codec
     if args.crf is not None:
         config.output.crf = args.crf
+    if args.bit_depth:
+        config.output.bit_depth = args.bit_depth
+    if args.append_params:
+        config.output.append_params_to_filename = True
     if args.output_dir:
         config.output.output_dir = args.output_dir
     if args.shape:

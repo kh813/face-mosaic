@@ -65,11 +65,14 @@ class FiltersConfig:
 @dataclass
 class OutputConfig:
     codec: str = "hevc"  # "hevc" or "h264"
-    crf: int = 18
+    crf: int = 23
     preset: str = "medium"
+    bit_depth: str = "auto"  # "auto", "8bit", "10bit"
     preserve_color_tags: bool = True
     output_dir: str = ""
     filename_suffix: str = "_blurred"
+    append_params_to_filename: bool = False
+
 
 @dataclass
 class AppConfig:

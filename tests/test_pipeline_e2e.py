@@ -134,3 +134,33 @@ def test_pipeline_with_preview_callback_and_mock_detections(synthetic_video_path
     assert len(preview_calls) > 0
     assert any("Pass 1" in text or "Detection" in text for _, text in preview_calls)
 
+def test_pipeline_append_params_to_filename(synthetic_video_path):
+    from unittest.mock import MagicMock
+    from face_mosaic.detector import FaceDetection
+
+    config = AppConfig()
+    config.model.name = "scrfd_2.5g_bnkps.onnx"
+    config.output.codec = "h264"
+    config.output.preset = "ultrafast"
+    config.output.crf = 23
+    config.blur.type = "gaussian"
+    config.blur.strength = 51
+    config.blur.margin_x = 0.50
+    config.output.append_params_to_filename = True
+
+    pipeline = ProcessingPipeline(config)
+    mock_detector = MagicMock()
+    mock_detector.active_provider = "CPU"
+    mock_detector.detect.return_value = [
+        FaceDetection(bbox=np.array([20, 30, 80, 90]), score=0.88)
+    ]
+    pipeline.detector = mock_detector
+
+    res = pipeline.process_video(synthetic_video_path)
+    assert res["status"] == "success"
+    out_path = Path(res["output"])
+    assert "_(G51-M50-CRF23)" in out_path.stem
+    if out_path.exists():
+        out_path.unlink()
+
+

@@ -24,8 +24,10 @@ def test_gui_window_initialization(qapp):
     assert window.windowTitle() == "face-mosaic: Automated Face Blur Tool"
     assert window.combo_model.count() >= 3
     assert window.spin_pad_back.value() == 12
-    assert window.spin_pad_fwd.value() == 8
-    assert window.spin_crf.value() == 18
+    assert window.spin_crf.value() == 23
+    assert window.combo_crf_preset.currentText() == "標準 (23 - 推奨)"
+    assert window.combo_bit_depth.currentText() == "Auto (自動)"
+    assert not window.chk_append_params.isChecked()
     assert not window.windowIcon().isNull()
 
 def test_gui_blur_type_switch(qapp):
@@ -792,6 +794,57 @@ def test_gui_preview_action_buttons_styling_and_disabled_during_worker(qapp, tmp
     window._update_output_button_states()
     assert window.btn_open_video.isEnabled()
     assert window.btn_open_folder.isEnabled()
+
+def test_gui_crf_presets_and_output_options(qapp, monkeypatch):
+    window = MainWindow()
+
+    # Test preset combo -> spinbox
+    window.combo_crf_preset.setCurrentIndex(1)  # 最高画質 (18)
+    assert window.spin_crf.value() == 18
+
+    window.combo_crf_preset.setCurrentIndex(2)  # 容量優先 (26)
+    assert window.spin_crf.value() == 26
+
+    window.combo_crf_preset.setCurrentIndex(0)  # 標準 (23)
+    assert window.spin_crf.value() == 23
+
+    # Test spinbox -> preset combo
+    window.spin_crf.setValue(18)
+    assert "18" in window.combo_crf_preset.currentText()
+    window.spin_crf.setValue(35)
+    assert window.combo_crf_preset.currentText() == "カスタム"
+
+    # Test Bit Depth & Param Suffix options
+    window.combo_bit_depth.setCurrentIndex(1)  # 8-bit
+    window.chk_append_params.setChecked(True)
+
+    # Capture config launched into worker
+    captured_cfg = []
+    class MockWorker:
+        def __init__(self, cfg, items):
+            captured_cfg.append(cfg)
+        def start(self): pass
+        item_updated_signal = MagicMock()
+        preview_signal = MagicMock()
+        log_signal = MagicMock()
+        overall_progress_signal = MagicMock()
+        finished_signal = MagicMock()
+
+    monkeypatch.setattr("face_mosaic.gui.app.ProcessingWorker", MockWorker)
+    
+    # Add dummy item to trigger start
+    item = MagicMock()
+    item.status = "Waiting"
+    item.is_removed = False
+    window.queue_items = [item]
+
+    window._toggle_processing()
+    assert len(captured_cfg) == 1
+    cfg = captured_cfg[0]
+    assert cfg.output.crf == 35
+    assert cfg.output.bit_depth == "8bit"
+    assert cfg.output.append_params_to_filename is True
+
 
 
 
