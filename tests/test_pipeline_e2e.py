@@ -138,6 +138,11 @@ def test_pipeline_append_params_to_filename(synthetic_video_path):
     from unittest.mock import MagicMock
     from face_mosaic.detector import FaceDetection
 
+    models_dir = Path(__file__).resolve().parent.parent / "models"
+    model_file = models_dir / "scrfd_2.5g_bnkps.onnx"
+    if not model_file.exists():
+        pytest.skip("Model scrfd_2.5g_bnkps.onnx not found")
+
     config = AppConfig()
     config.model.name = "scrfd_2.5g_bnkps.onnx"
     config.output.codec = "h264"
@@ -148,7 +153,7 @@ def test_pipeline_append_params_to_filename(synthetic_video_path):
     config.blur.margin_x = 0.50
     config.output.append_params_to_filename = True
 
-    pipeline = ProcessingPipeline(config)
+    pipeline = ProcessingPipeline(config, model_dir=str(models_dir))
     mock_detector = MagicMock()
     mock_detector.active_provider = "CPU"
     mock_detector.detect.return_value = [
@@ -162,5 +167,6 @@ def test_pipeline_append_params_to_filename(synthetic_video_path):
     assert "_(G51-M50-CRF23)" in out_path.stem
     if out_path.exists():
         out_path.unlink()
+
 
 

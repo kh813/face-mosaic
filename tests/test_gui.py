@@ -795,7 +795,7 @@ def test_gui_preview_action_buttons_styling_and_disabled_during_worker(qapp, tmp
     assert window.btn_open_video.isEnabled()
     assert window.btn_open_folder.isEnabled()
 
-def test_gui_crf_presets_and_output_options(qapp, monkeypatch):
+def test_gui_crf_presets_and_output_options(qapp, tmp_path, monkeypatch):
     window = MainWindow()
 
     # Test preset combo -> spinbox
@@ -832,11 +832,10 @@ def test_gui_crf_presets_and_output_options(qapp, monkeypatch):
 
     monkeypatch.setattr("face_mosaic.gui.app.ProcessingWorker", MockWorker)
     
-    # Add dummy item to trigger start
-    item = MagicMock()
-    item.status = "Waiting"
-    item.is_removed = False
-    window.queue_items = [item]
+    # Add dummy item via proper queue addition
+    test_v = tmp_path / "dummy.mp4"
+    test_v.touch()
+    window._add_to_queue([test_v])
 
     window._toggle_processing()
     assert len(captured_cfg) == 1
@@ -844,6 +843,7 @@ def test_gui_crf_presets_and_output_options(qapp, monkeypatch):
     assert cfg.output.crf == 35
     assert cfg.output.bit_depth == "8bit"
     assert cfg.output.append_params_to_filename is True
+
 
 
 
