@@ -24,6 +24,7 @@ def test_gui_window_initialization(qapp):
     assert window.windowTitle() == "face-mosaic: Automated Face Blur Tool"
     assert window.combo_model.count() >= 3
     assert window.spin_pad_back.value() == 12
+    assert window.spin_pad_fwd.value() == 24
     assert window.spin_crf.value() == 23
     assert window.combo_crf_preset.currentText() == "標準 (23 - 推奨)"
     assert window.combo_bit_depth.currentText() == "Auto (自動)"
@@ -514,12 +515,20 @@ def test_subprocess_window_flags_windows_vs_unix(monkeypatch):
 
     # Windows check
     monkeypatch.setattr(sys, "platform", "win32")
+    # Simulate Windows-specific attributes if running on Unix
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    if not hasattr(subprocess, "STARTUPINFO"):
+        class DummyStartupInfo:
+            dwFlags = 0
+            wShowWindow = 0
+        monkeypatch.setattr(subprocess, "STARTUPINFO", DummyStartupInfo, raising=False)
+        monkeypatch.setattr(subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+
     kwargs_win = get_subprocess_kwargs()
     assert kwargs_win.get("creationflags") in (getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000), 0x08000000)
-    if hasattr(subprocess, "STARTUPINFO"):
-        assert kwargs_win.get("startupinfo") is not None
-        assert kwargs_win["startupinfo"].wShowWindow == 0
-
+    assert kwargs_win.get("startupinfo") is not None
+    assert kwargs_win["startupinfo"].wShowWindow == 0
 
     # macOS / Linux check
     monkeypatch.setattr(sys, "platform", "darwin")

@@ -16,9 +16,14 @@ from .pipeline import ProcessingPipeline
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
 
-def collect_video_files(inputs: List[str], recursive: bool = True) -> List[Path]:
+def collect_video_files(
+    inputs: List[str],
+    recursive: bool = True,
+    exclude_suffix: Optional[str] = None
+) -> List[Path]:
     """
     Collect video files from single files, list of files, and directories.
+    Skips previously processed output files matching exclude_suffix or '_blurred'.
     """
     collected = []
     for item in inputs:
@@ -33,8 +38,12 @@ def collect_video_files(inputs: List[str], recursive: bool = True) -> List[Path]
             for sub_p in p.glob(pattern):
                 if sub_p.is_file() and sub_p.suffix.lower() in VIDEO_EXTENSIONS:
                     # Skip already blurred output files to avoid infinite loops
-                    if "_blurred" not in sub_p.stem:
-                        collected.append(sub_p.resolve())
+                    stem = sub_p.stem
+                    if "_blurred" in stem:
+                        continue
+                    if exclude_suffix and exclude_suffix in stem:
+                        continue
+                    collected.append(sub_p.resolve())
         else:
             print(f"[Warning] Path does not exist: {item}")
     
@@ -104,13 +113,13 @@ def main():
         "--pad-back",
         type=int,
         default=None,
-        help="Frames to pad backward before face appearance (default: 3)"
+        help="Frames to pad backward before face appearance (default: 12)"
     )
     parser.add_argument(
         "--pad-fwd",
         type=int,
         default=None,
-        help="Frames to pad forward after face disappearance (default: 3)"
+        help="Frames to pad forward after face disappearance (default: 24)"
     )
     parser.add_argument(
         "--codec",
@@ -214,7 +223,11 @@ def main():
         watcher.start()
         return
 
-    video_files = collect_video_files(args.inputs, recursive=not args.no_recursive)
+    video_files = collect_video_files(
+        args.inputs,
+        recursive=not args.no_recursive,
+        exclude_suffix=config.output.filename_suffix
+    )
 
     if not video_files:
         print("Error: No video files found matching the specified inputs.")

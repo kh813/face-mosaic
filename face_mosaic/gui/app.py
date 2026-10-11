@@ -589,12 +589,12 @@ class MainWindow(QMainWindow):
             "顔が最初に検出されたフレームより何フレーム前からモザイクを適用するか。<br><br>"
             "正面から歩いてくる人物は顔検出される前から映り込みます。<br>"
             "この値を増やすことで、遠方から接近する人物の顔もしっかり先行モザイクできます。<br><br>"
-            "<b>推奨: 10〜16フレーム</b> (60fps の場合 ≈ 0.17〜0.27秒分)<br>"
+            "<b>推奨: 8〜16フレーム</b> (30fps の場合 ≈ 0.3〜0.5秒分)<br>"
             "デフォルト: 12フレーム"
         ), 3, 0)
 
         self.spin_pad_back = QSpinBox()
-        self.spin_pad_back.setRange(0, 60)
+        self.spin_pad_back.setRange(0, 120)
         self.spin_pad_back.setValue(12)
         grid.addWidget(self.spin_pad_back, 3, 1)
 
@@ -602,15 +602,16 @@ class MainWindow(QMainWindow):
             "Pad Forward (frames):",
             "<b>前方パディング (Pad Forward)</b><br>"
             "顔が最後に検出されたフレームより何フレーム後までモザイクを継続するか。<br><br>"
-            "歩行中に一時的に顔が隠れてトラッカーが切れた場合も、<br>"
-            "この値のフレーム数だけモザイクを延長して継続します。<br><br>"
-            "<b>推奨: 6〜10フレーム</b> (30fps の場合 ≈ 0.2〜0.3秒分)<br>"
-            "デフォルト: 8フレーム"
+            "歩行中やすれ違い時に顔が横を向いて検出が切れた場合も、<br>"
+            "この値のフレーム数だけモザイクを延長して顔の露出を防ぎます。<br><br>"
+            "<b>推奨: 20〜36フレーム</b> (30fps基準で約0.7〜1.2秒)<br>"
+            "デフォルト: 24フレーム (約0.8秒分)<br><br>"
+            "<i>💡 60fps / 120fps / 240fps などの動画では、FPSに応じて自動的にフレーム数がスケールされるため、実時間でのモザイク継続時間は均一に維持されます。</i>"
         ), 3, 2)
 
         self.spin_pad_fwd = QSpinBox()
-        self.spin_pad_fwd.setRange(0, 30)
-        self.spin_pad_fwd.setValue(8)
+        self.spin_pad_fwd.setRange(0, 120)
+        self.spin_pad_fwd.setValue(24)
         grid.addWidget(self.spin_pad_fwd, 3, 3)
 
         # ---- Row 4: Output Codec / CRF Quality ----

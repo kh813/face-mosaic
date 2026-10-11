@@ -13,7 +13,7 @@ import numpy as np
 import cv2
 
 from .config import AppConfig
-from .io_utils import probe_video, VideoReader, VideoWriter, PrefetchedVideoReader
+from .io_utils import probe_video, VideoReader, VideoWriter, PrefetchedVideoReader, build_output_path
 from .detector import SCRFDDetector
 from .tracker import FaceTracker
 from .blur import FaceBlurrer
@@ -81,16 +81,18 @@ class ProcessingPipeline:
 
         # Determine output path
         if output_path is None:
-            out_dir = Path(self.config.output.output_dir) if self.config.output.output_dir else in_path.parent
-            out_dir.mkdir(parents=True, exist_ok=True)
             param_str = ""
-            if self.config.output.append_params_to_filename:
+            if getattr(self.config.output, "append_params_to_filename", False):
                 t_abbr = "G" if self.config.blur.type == "gaussian" else "M"
                 str_val = self.config.blur.strength if self.config.blur.type == "gaussian" else self.config.blur.mosaic_block_size
                 m_val = int(self.config.blur.margin_x * 100)
                 param_str = f"_({t_abbr}{str_val}-M{m_val}-CRF{self.config.output.crf})"
-            out_filename = f"{in_path.stem}{self.config.output.filename_suffix}{param_str}.mp4"
-            out_path = out_dir / out_filename
+            suffix = f"{self.config.output.filename_suffix}{param_str}"
+            out_path = build_output_path(
+                input_path=in_path,
+                output_dir=self.config.output.output_dir,
+                filename_suffix=suffix,
+            )
         else:
             out_path = Path(output_path).resolve()
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,8 +107,17 @@ class ProcessingPipeline:
             max_missing_frames=self.config.tracking.max_missing_frames,
             padding_backward=self.config.tracking.padding_backward,
             padding_forward=self.config.tracking.padding_forward,
-            filters_config=self.config.filters
+            filters_config=self.config.filters,
+            fps=info.fps,
+            auto_scale_by_fps=getattr(self.config.tracking, "auto_scale_by_fps", True),
+            base_fps=getattr(self.config.tracking, "base_fps", 30.0)
         )
+        if tracker.auto_scale_by_fps and abs(info.fps - tracker.base_fps) > 2.0:
+            print(
+                f"[FPS-Adaptive Padding] {info.fps:.1f} fps detected: "
+                f"Padding scaled to -{tracker.padding_backward}/+{tracker.padding_forward} frames "
+                f"(approx {tracker.padding_forward / info.fps:.2f}s post-appearance retention)"
+            )
 
         checkpoint = VideoCheckpoint.for_video(out_path)
         pass1_done = False

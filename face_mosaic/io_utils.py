@@ -13,11 +13,15 @@ import threading
 import queue
 import time
 from pathlib import Path
-from typing import Generator, Tuple, Optional, Dict, Any
+from typing import Generator, Tuple, Optional, Dict, Any, Union
 import numpy as np
 import cv2
 
 from .color import ColorMetadata, parse_color_metadata
+
+COMMON_VIDEO_EXTENSIONS = {
+    ".mp4", ".mov", ".mkv", ".m4v", ".webm", ".avi", ".flv", ".wmv", ".ts"
+}
 
 def get_subprocess_kwargs() -> Dict[str, Any]:
     """
@@ -38,7 +42,71 @@ def get_subprocess_kwargs() -> Dict[str, Any]:
             kwargs["startupinfo"] = si
     return kwargs
 
+def build_output_path(
+    input_path: Union[str, Path],
+    output_dir: Optional[Union[str, Path]] = None,
+    filename_suffix: str = "_blurred",
+    target_extension: Optional[str] = None,
+    avoid_collision: bool = False
+) -> Path:
+    """
+    Generate an output file path for the processed video.
+
+    Preserves original video container/extension (e.g. .mov, .mp4, .mkv),
+    prevents duplicate suffixes (e.g. avoid _blurred_blurred),
+    handles suffix strings that accidentally contain an extension,
+    and supports collision avoidance when multiple files share the same name.
+    """
+    in_path = Path(input_path).resolve()
+    # 1. Determine destination directory
+    if output_dir and str(output_dir).strip():
+        dest_dir = Path(output_dir).resolve()
+    else:
+        dest_dir = in_path.parent
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2. Extract suffix & potential extension embedded in suffix
+    clean_suffix = filename_suffix if filename_suffix is not None else "_blurred"
+    embedded_ext = None
+    if "." in clean_suffix:
+        # e.g., "_blurred.mp4" -> suffix: "_blurred", embedded_ext: ".mp4"
+        suffix_parts = clean_suffix.rsplit(".", 1)
+        clean_suffix = suffix_parts[0]
+        embedded_ext = f".{suffix_parts[1]}"
+
+    # 3. Determine final extension
+    if target_extension and target_extension.strip():
+        final_ext = target_extension if target_extension.startswith(".") else f".{target_extension}"
+    elif embedded_ext:
+        final_ext = embedded_ext
+    else:
+        orig_ext = in_path.suffix
+        if orig_ext.lower() in COMMON_VIDEO_EXTENSIONS:
+            final_ext = orig_ext
+        else:
+            final_ext = ".mp4"  # Default fallback container
+
+    # 4. Construct stem without duplicate suffix
+    stem = in_path.stem
+    if clean_suffix and stem.endswith(clean_suffix):
+        # Prevent repeating suffix (e.g., sample_blurred -> sample_blurred)
+        final_stem = stem
+    else:
+        final_stem = f"{stem}{clean_suffix}"
+
+    out_file = dest_dir / f"{final_stem}{final_ext}"
+
+    # 5. Optional collision avoidance
+    if avoid_collision and out_file.exists():
+        counter = 1
+        while out_file.exists():
+            out_file = dest_dir / f"{final_stem}_{counter}{final_ext}"
+            counter += 1
+
+    return out_file
+
 _supported_encoders: Optional[set] = None
+_qsv_supported: Optional[bool] = None
 
 def get_supported_encoders() -> set:
     """Query available ffmpeg encoders once and cache."""

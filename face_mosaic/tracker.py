@@ -27,6 +27,35 @@ def compute_iou(box1: np.ndarray, box2: np.ndarray) -> float:
 
     return inter / union if union > 0 else 0.0
 
+def compute_track_match_score(pred_box: np.ndarray, det_box: np.ndarray) -> float:
+    """
+    Compute matching affinity between predicted tracklet box and detection box.
+    Combines standard IoU with distance-aware soft-matching for moving subjects.
+    """
+    iou = compute_iou(pred_box, det_box)
+    if iou >= 0.25:
+        return iou
+
+    # Center distance & scale consistency check for fast moving faces
+    w1, h1 = pred_box[2] - pred_box[0], pred_box[3] - pred_box[1]
+    w2, h2 = det_box[2] - det_box[0], det_box[3] - det_box[1]
+    if w1 <= 0 or h1 <= 0 or w2 <= 0 or h2 <= 0:
+        return 0.0
+
+    c1_x, c1_y = (pred_box[0] + pred_box[2]) / 2.0, (pred_box[1] + pred_box[3]) / 2.0
+    c2_x, c2_y = (det_box[0] + det_box[2]) / 2.0, (det_box[1] + det_box[3]) / 2.0
+    dist = np.hypot(c1_x - c2_x, c1_y - c2_y)
+    diag = np.hypot(max(w1, w2), max(h1, h2))
+
+    # If center is within 60% of face diagonal and scale ratio is between 0.6 and 1.6
+    scale_ratio = (w2 * h2) / (w1 * h1)
+    if dist < diag * 0.6 and 0.5 <= scale_ratio <= 2.0:
+        # Distance-based affinity mapped to [0.3, 0.45] to allow continuation
+        dist_affinity = max(0.3, 0.45 * (1.0 - dist / (diag * 0.6)))
+        return max(iou, dist_affinity)
+
+    return iou
+
 class Tracklet:
     def __init__(self, track_id: int, start_frame: int, detection: FaceDetection, crop: np.ndarray):
         self.track_id = track_id
@@ -56,6 +85,44 @@ class Tracklet:
     def latest_bbox(self) -> np.ndarray:
         return self.frames[self.last_frame]
 
+    def get_velocity(self) -> np.ndarray:
+        """
+        Estimate recent per-frame velocity [vx1, vy1, vx2, vy2].
+        Uses up to the last 4 detections for smoothing.
+        """
+        frame_keys = sorted(self.frames.keys())
+        if len(frame_keys) < 2:
+            return np.zeros(4, dtype=np.float32)
+
+        # Use up to 3 intervals
+        recent_keys = frame_keys[-min(4, len(frame_keys)):]
+        dt = recent_keys[-1] - recent_keys[0]
+        if dt <= 0:
+            return np.zeros(4, dtype=np.float32)
+
+        delta = (self.frames[recent_keys[-1]] - self.frames[recent_keys[0]]) / float(dt)
+        # Cap velocity to prevent wild drift (max 30% face size per frame)
+        w = self.latest_bbox[2] - self.latest_bbox[0]
+        h = self.latest_bbox[3] - self.latest_bbox[1]
+        max_v = max(w, h) * 0.35
+        return np.clip(delta, -max_v, max_v)
+
+    def predict_bbox(self, target_frame: int) -> np.ndarray:
+        """
+        Predict bounding box at target_frame based on recent trajectory.
+        """
+        if target_frame == self.last_frame:
+            return self.latest_bbox
+        dt = target_frame - self.last_frame
+        if dt <= 0 or len(self.frames) < 2:
+            return self.latest_bbox
+        vel = self.get_velocity()
+        pred = self.latest_bbox + vel * dt
+        # Ensure box remains valid
+        pred[2] = max(pred[2], pred[0] + 5.0)
+        pred[3] = max(pred[3], pred[1] + 5.0)
+        return pred
+
 class FaceTracker:
     """
     Online tracker with batch completion & track-level filtering.
@@ -65,15 +132,30 @@ class FaceTracker:
     def __init__(
         self,
         iou_threshold: float = 0.3,
-        max_missing_frames: int = 8,
+        max_missing_frames: int = 16,
         padding_backward: int = 12,
-        padding_forward: int = 8,
-        filters_config: Optional[FiltersConfig] = None
+        padding_forward: int = 24,
+        filters_config: Optional[FiltersConfig] = None,
+        fps: Optional[float] = None,
+        auto_scale_by_fps: bool = True,
+        base_fps: float = 30.0
     ):
         self.iou_threshold = iou_threshold
-        self.max_missing_frames = max_missing_frames
-        self.padding_backward = padding_backward
-        self.padding_forward = padding_forward
+        self.base_fps = base_fps
+        self.video_fps = fps or base_fps
+        self.auto_scale_by_fps = auto_scale_by_fps
+
+        # Automatically adapt padding & missing frames according to video FPS
+        # (e.g. 60fps = 2x frames, 120fps = 4x frames, 240fps = 8x frames)
+        if auto_scale_by_fps and fps and fps > 0:
+            scale = max(0.5, fps / base_fps)
+            self.max_missing_frames = max(1, int(round(max_missing_frames * scale)))
+            self.padding_backward = max(0, int(round(padding_backward * scale)))
+            self.padding_forward = max(0, int(round(padding_forward * scale)))
+        else:
+            self.max_missing_frames = max_missing_frames
+            self.padding_backward = padding_backward
+            self.padding_forward = padding_forward
         
         self.next_track_id = 0
         self.active_tracks: List[Tracklet] = []
@@ -137,11 +219,12 @@ class FaceTracker:
         matched_dets = set()
 
         if self.active_tracks and detections:
-            # Build IoU matrix
+            # Build match matrix using predicted bbox & distance-aware soft matching
             ious = np.zeros((len(self.active_tracks), len(detections)), dtype=np.float32)
             for t_idx, track in enumerate(self.active_tracks):
+                pred_box = track.predict_bbox(frame_idx)
                 for d_idx, det in enumerate(detections):
-                    ious[t_idx, d_idx] = compute_iou(track.latest_bbox, det.bbox)
+                    ious[t_idx, d_idx] = compute_track_match_score(pred_box, det.bbox)
 
             # Greedy matching
             while True:
@@ -212,14 +295,16 @@ class FaceTracker:
                 if skin_valid_votes and not any(skin_valid_votes):
                     return False  # Pure statue/bronze without human skin tone
 
-
         # Animal filter
         if self.filters_config.animal_filter.enabled and track.crops:
             human_votes = []
-            sample_frames = list(track.frames.keys())[::max(1, len(track.frames) // 5)]
-            for f in sample_frames:
+            num_samples = min(len(track.crops), 5)
+            sample_indices = np.linspace(0, len(track.crops) - 1, num_samples, dtype=int)
+            sample_frames = list(track.frames.keys())
+            for idx in sample_indices:
+                f = sample_frames[min(idx, len(sample_frames) - 1)]
                 lm = track.landmarks.get(f)
-                crop = track.crops[0]  # Representative crop
+                crop = track.crops[idx]
                 is_h, _ = self.animal_filter.is_human(crop, lm)
                 human_votes.append(is_h)
             if human_votes and not any(human_votes):
@@ -252,7 +337,7 @@ class FaceTracker:
         applying:
         1. Track-level validity filtering
         2. Linear interpolation for missing frames inside track
-        3. Backward (N) and Forward (M) padding extension
+        3. Backward (N) and Forward (M) padding extension with velocity extrapolation and safety margin
         """
         self.finish()
         
@@ -290,11 +375,24 @@ class FaceTracker:
                 if 0 <= target_f < total_frames:
                     frame_map[target_f].append(start_bbox)
 
-            # Apply forward padding (after end)
+            # Apply forward padding (after end) with velocity extrapolation & safety margin
             end_bbox = track.frames[max_f]
+            vel = track.get_velocity()
             for pad_i in range(1, self.padding_forward + 1):
                 target_f = max_f + pad_i
                 if 0 <= target_f < total_frames:
-                    frame_map[target_f].append(end_bbox)
+                    # Decay velocity: 0.96**pad_i ensures smooth deceleration
+                    decay = 0.96 ** pad_i
+                    extrapolated = end_bbox + vel * (pad_i * decay)
+                    # Expand by 5% safety margin to ensure no facial exposure
+                    w = max(1.0, extrapolated[2] - extrapolated[0])
+                    h = max(1.0, extrapolated[3] - extrapolated[1])
+                    pad_box = np.array([
+                        max(0.0, extrapolated[0] - w * 0.05),
+                        max(0.0, extrapolated[1] - h * 0.05),
+                        min(float(img_w), extrapolated[2] + w * 0.05),
+                        min(float(img_h), extrapolated[3] + h * 0.05)
+                    ], dtype=np.float32)
+                    frame_map[target_f].append(pad_box)
 
         return frame_map

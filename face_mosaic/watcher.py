@@ -56,7 +56,10 @@ class FolderWatcher:
         for file_path in self.watch_dir.glob("**/*"):
             if not file_path.is_file() or file_path.suffix.lower() not in VIDEO_EXTENSIONS:
                 continue
-            if "_blurred" in file_path.stem:
+            stem = file_path.stem
+            if "_blurred" in stem:
+                continue
+            if self.config.output.filename_suffix and self.config.output.filename_suffix in stem:
                 continue
 
             abs_str = str(file_path.resolve())

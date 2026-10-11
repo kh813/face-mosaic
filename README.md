@@ -186,7 +186,7 @@ python -m face_mosaic.cli /path/to/videos/ --output-dir /path/to/output/
 python -m face_mosaic.cli video.mp4 --blur-type mosaic --strength 28 --shape ellipse
 
 # ガウスぼかし強度・検出閾値・前後パディングフレーム数指定
-python -m face_mosaic.cli video.mp4 --blur-type gaussian --strength 51 --conf 0.5 --pad-back 12 --pad-fwd 8
+python -m face_mosaic.cli video.mp4 --blur-type gaussian --strength 51 --conf 0.5 --pad-back 12 --pad-fwd 24
 
 # 高速モデル (2.5G)・H.264エンコーダ指定
 python -m face_mosaic.cli video.mp4 --model scrfd_2.5g_bnkps.onnx --codec h264 --crf 18

@@ -18,9 +18,11 @@ class ModelConfig:
 @dataclass
 class TrackingConfig:
     iou_threshold: float = 0.3
-    max_missing_frames: int = 8
+    max_missing_frames: int = 16
     padding_backward: int = 12
-    padding_forward: int = 8
+    padding_forward: int = 24
+    auto_scale_by_fps: bool = True
+    base_fps: float = 30.0
 
 @dataclass
 class BlurConfig:
