@@ -58,10 +58,11 @@ def test_check_for_updates_newer_release():
                 "browser_download_url": "https://example.com/face-mosaic-windows.zip",
             },
             {
-                "name": "face-mosaic-macos.tar.gz",
-                "browser_download_url": "https://example.com/face-mosaic-macos.tar.gz",
+                "name": "face-mosaic-macos.zip",
+                "browser_download_url": "https://example.com/face-mosaic-macos.zip",
             },
         ],
+
     }
     raw_json = json.dumps(mock_response_data).encode("utf-8")
 
@@ -78,9 +79,10 @@ def test_check_for_updates_newer_release():
         expected_asset = (
             "https://example.com/face-mosaic-windows.zip"
             if sys.platform == "win32"
-            else "https://example.com/face-mosaic-macos.tar.gz"
+            else "https://example.com/face-mosaic-macos.zip"
         )
         assert info["asset_url"] == expected_asset
+
 
 
 def test_check_for_updates_no_newer_release():

@@ -75,10 +75,14 @@ def check_for_updates(current_version: Optional[str] = None) -> Optional[Dict[st
 
     if is_newer_version(tag_name, cur_ver):
         # Find matching asset for current platform
-        target_asset_name = "face-mosaic-windows.zip" if sys.platform == "win32" else "face-mosaic-macos.tar.gz"
+        if sys.platform == "win32":
+            target_asset_names = ["face-mosaic-windows.zip"]
+        else:
+            target_asset_names = ["face-mosaic-macos.zip", "face-mosaic-macos.tar.gz"]
+
         asset_url = None
         for asset in data.get("assets", []):
-            if asset.get("name") == target_asset_name:
+            if asset.get("name") in target_asset_names:
                 asset_url = asset.get("browser_download_url")
                 break
 
@@ -200,7 +204,22 @@ def update_via_release_asset(
             else:
                 shutil.copy2(item, target_item)
 
+        # Ensure POSIX execute permissions on launch scripts on macOS/Linux
+        if sys.platform != "win32":
+            scripts_dir = dest / "scripts"
+            executable_candidates = [
+                dest / "start-app.command",
+                *(list(scripts_dir.glob("*.sh")) if scripts_dir.exists() else [])
+            ]
+            for cand in executable_candidates:
+                if cand.exists():
+                    try:
+                        cand.chmod(cand.stat().st_mode | 0o755)
+                    except Exception:
+                        pass
+
         return True, "Successfully installed latest release package."
+
     except Exception as e:
         return False, f"Release asset update failed: {e}"
     finally:
