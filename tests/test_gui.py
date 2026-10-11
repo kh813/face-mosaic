@@ -30,6 +30,8 @@ def test_gui_window_initialization(qapp):
     assert window.combo_bit_depth.currentText() == "Auto (自動)"
     assert not window.chk_append_params.isChecked()
     assert not window.windowIcon().isNull()
+    assert hasattr(window, "btn_update")
+    assert "Check Update" in window.btn_update.text()
 
 def test_gui_blur_type_switch(qapp):
     window = MainWindow()

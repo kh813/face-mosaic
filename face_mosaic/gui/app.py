@@ -30,13 +30,43 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QFileDialog, QProgressBar, QTextEdit,
     QComboBox, QSpinBox, QDoubleSpinBox, QGroupBox, QGridLayout,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QMenu, QSizePolicy, QCheckBox
+    QAbstractItemView, QMenu, QSizePolicy, QCheckBox, QProgressDialog
 )
 
 from face_mosaic.config import AppConfig
 from face_mosaic.pipeline import ProcessingPipeline
 from face_mosaic.cli import collect_video_files
 from face_mosaic.hardware import detect_hardware_profile
+from face_mosaic import __version__
+from face_mosaic.updater import check_for_updates, perform_self_update, is_git_repository
+
+
+class UpdateCheckWorker(QThread):
+    finished_signal = Signal(object)  # Optional[dict]
+
+    def run(self):
+        try:
+            info = check_for_updates()
+            self.finished_signal.emit(info)
+        except Exception:
+            self.finished_signal.emit(None)
+
+
+class SelfUpdateWorker(QThread):
+    progress_signal = Signal(str, int)     # (message, percent)
+    finished_signal = Signal(bool, str)    # (success, message)
+
+    def run(self):
+        try:
+            def on_progress(msg: str, cur: int, tot: int):
+                pct = int((cur / tot) * 100) if tot > 0 else cur
+                self.progress_signal.emit(msg, pct)
+
+            success, msg = perform_self_update(on_progress)
+            self.finished_signal.emit(success, msg)
+        except Exception as e:
+            self.finished_signal.emit(False, str(e))
+
 
 
 @dataclass
@@ -364,8 +394,34 @@ class MainWindow(QMainWindow):
             else:
                 self.last_open_dir = str(Path.home().resolve())
 
+        self.update_checker_worker: Optional[UpdateCheckWorker] = None
+        self.self_update_worker: Optional[SelfUpdateWorker] = None
+
         self.setAcceptDrops(True)
+        self._init_menu_bar()
         self._init_ui()
+
+        # Check updates quietly in background 2s after launch
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(2000, lambda: self._check_for_updates_ui(manual=False))
+
+    def _init_menu_bar(self):
+        menubar = self.menuBar()
+        help_menu = menubar.addMenu("Help (&H)")
+
+        act_check_update = QAction("🔄 Check for Updates...", self)
+        act_check_update.triggered.connect(lambda: self._check_for_updates_ui(manual=True))
+        help_menu.addAction(act_check_update)
+
+        help_menu.addSeparator()
+
+        act_disclaimer = QAction("⚖ 免責事項・利用規約 (Disclaimer)...", self)
+        act_disclaimer.triggered.connect(self._show_disclaimer)
+        help_menu.addAction(act_disclaimer)
+
+        act_about = QAction("ℹ About face-mosaic", self)
+        act_about.triggered.connect(self._show_about)
+        help_menu.addAction(act_about)
 
     def _init_ui(self):
         central = QWidget()
@@ -816,11 +872,15 @@ class MainWindow(QMainWindow):
         log_btn_layout = QHBoxLayout()
         self.btn_disclaimer = QPushButton("⚖ 免責事項 (Disclaimer)")
         self.btn_disclaimer.clicked.connect(self._show_disclaimer)
+        self.btn_update = QPushButton("🔄 Check Update")
+        self.btn_update.setToolTip("GitHubから最新バージョンを確認・更新します")
+        self.btn_update.clicked.connect(lambda: self._check_for_updates_ui(manual=True))
         self.btn_copy_log = QPushButton("📋 Copy Log")
         self.btn_copy_log.clicked.connect(self._copy_log)
         self.btn_open_log = QPushButton("📁 Open Log File")
         self.btn_open_log.clicked.connect(self._open_log_file)
         log_btn_layout.addWidget(self.btn_disclaimer)
+        log_btn_layout.addWidget(self.btn_update)
         log_btn_layout.addStretch()
         log_btn_layout.addWidget(self.btn_copy_log)
         log_btn_layout.addWidget(self.btn_open_log)
@@ -1573,6 +1633,118 @@ class MainWindow(QMainWindow):
             "についても、開発者およびコントリビューターは一切の責任を負いません。</p>"
         )
         QMessageBox.information(self, title, text)
+
+    def _show_about(self):
+        title = "About face-mosaic"
+        text = (
+            f"<h3>face-mosaic v{__version__}</h3>"
+            f"<p>街中散歩動画向け オフライン自動顔ぼかし・モザイクツール</p>"
+            f"<p><b>リポジトリ:</b> <a href='https://github.com/kh813/face-mosaic'>https://github.com/kh813/face-mosaic</a></p>"
+            f"<p><b>動作環境:</b> Python {sys.version.split()[0]} / {self.hw_profile.reason}</p>"
+        )
+        QMessageBox.about(self, title, text)
+
+    def _check_for_updates_ui(self, manual: bool = True):
+        if manual:
+            self.txt_log.append("GitHubに接続して最新バージョンを確認中...")
+            self.btn_update.setEnabled(False)
+
+        worker = UpdateCheckWorker(self)
+
+        def on_finished(info):
+            self.update_checker_worker = None
+            self.btn_update.setEnabled(True)
+            if info and info.get("is_newer"):
+                tag = info["tag_name"]
+                self.txt_log.append(f"\n🎉 新しいバージョンが利用可能です: {tag} ({info['title']})")
+                self.btn_update.setText(f"🎉 Update to {tag}")
+                self.btn_update.setStyleSheet("""
+                    QPushButton {
+                        background-color: #34C759;
+                        color: white;
+                        font-weight: bold;
+                        border-radius: 4px;
+                        padding: 0 8px;
+                    }
+                    QPushButton:hover { background-color: #2DB84D; }
+                """)
+
+                reply = QMessageBox.question(
+                    self,
+                    "アップデートが見つかりました",
+                    f"新しいバージョン <b>{tag}</b> が公開されています！\n\n"
+                    f"【リリース内容】\n{info['title']}\n\n"
+                    f"今すぐセルフアップデートを実行しますか？",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    self._start_self_update(info)
+            else:
+                if manual:
+                    self.txt_log.append(f"✓ 現在最新バージョン (v{__version__}) を使用しています。")
+                    QMessageBox.information(
+                        self,
+                        "最新バージョンです",
+                        f"お使いの face-mosaic は最新バージョン (v{__version__}) です。"
+                    )
+
+        worker.finished_signal.connect(on_finished)
+        self.update_checker_worker = worker
+        worker.start()
+
+    def _start_self_update(self, info: dict):
+        self.txt_log.append("\n=======================================================")
+        self.txt_log.append("               SELF-UPDATE IN PROGRESS                 ")
+        self.txt_log.append("=======================================================")
+        self.btn_update.setEnabled(False)
+
+        progress_dlg = QProgressDialog("アップデートを準備中...", None, 0, 100, self)
+        progress_dlg.setWindowTitle("face-mosaic 自動更新")
+        progress_dlg.setWindowModality(Qt.WindowModal)
+        progress_dlg.setAutoClose(False)
+        progress_dlg.setValue(5)
+        progress_dlg.show()
+
+        worker = SelfUpdateWorker(self)
+
+        def on_prog(msg: str, pct: int):
+            progress_dlg.setLabelText(msg)
+            progress_dlg.setValue(max(5, min(95, pct)))
+            self.txt_log.append(f"  {msg}")
+
+        def on_finished(success: bool, msg: str):
+            self.self_update_worker = None
+            self.btn_update.setEnabled(True)
+            progress_dlg.close()
+            if success:
+                self.txt_log.append(f"✓ アップデート成功: {msg}")
+                self.btn_update.setText("🔄 Check Update")
+                self.btn_update.setStyleSheet("")
+                QMessageBox.information(
+                    self,
+                    "アップデート完了",
+                    f"最新バージョンへのアップデートが完了しました！\n\n"
+                    f"{msg}\n\n"
+                    f"変更を反映するため、アプリケーションを再起動してください。"
+                )
+            else:
+                self.txt_log.append(f"✗ アップデート失敗: {msg}")
+                reply = QMessageBox.warning(
+                    self,
+                    "アップデート失敗",
+                    f"アップデートに失敗しました:\n{msg}\n\nブラウザでリリースページを開きますか？",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    from PySide6.QtGui import QDesktopServices
+                    from PySide6.QtCore import QUrl
+                    QDesktopServices.openUrl(QUrl(info.get("html_url", "https://github.com/kh813/face-mosaic/releases")))
+
+        worker.progress_signal.connect(on_prog)
+        worker.finished_signal.connect(on_finished)
+        self.self_update_worker = worker
+        worker.start()
+
 
 
 def run_app():

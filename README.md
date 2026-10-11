@@ -120,8 +120,9 @@ python scripts/download_models.py
 | **Row 2** | **Blur Type**<br>ぼかし方式 | `Gaussian`（滑らかなガウスぼかし）または `Mosaic`（定番のブロックモザイク）。 |
 | | **Blur Shape**<br>モザイク形状 | `Round (Ellipse) ★推奨`（自然な丸型・四隅の余計な背景を巻き込まない）または `Rectangle (Square)`（従来の四角形）。 |
 | **Row 3** | **Pad Backward**<br>後方パディング | 顔が最初に検出されたフレームより何フレーム前から先行モザイクをかけるか（既定: `12` フレーム）。接近する人物の見逃しを防ぎます。 |
-| | **Pad Forward**<br>前方パディング | 顔が最後に検出されたフレームより何フレーム後までモザイクを継続するか（既定: `8` フレーム）。一時的に顔が隠れた場合の途切れを防ぎます。 |
+| | **Pad Forward**<br>前方パディング | 顔が最後に検出されたフレームより何フレーム後までモザイクを継続するか（既定: `24` フレーム）。一時的に顔が隠れたり振り向いた場合の途切れを防止。動画のfps（60/120/240fps）に合わせて自動スケーリングされます。 |
 | **Row 4** | **Output Codec**<br>出力コーデック | `HEVC (H.265) ★推奨`（同画質で高圧縮、iPhone 4Kネイティブ）または `H.264`（古い再生機器・SNSとの互換性重視）。 |
+
 | | **CRF Quality**<br>画質・容量バランス | 映像品質（既定: `23` ★推奨）。`標準 (CRF 23: 見た目の劣化なし＆容量約50%減)`、`最高画質 (CRF 18: 大容量)`、`容量優先 (CRF 26)` からワンクリック選択可能。数値が小さいほど高画質。 |
 | | **Bit Depth**<br>ビット深度 | `Auto (元動画に合わせる)`、`8-bit (互換性・サイズ削減優先)`、`10-bit (高階調維持)`。iPhone HDR動画を8-bit化することで容量削減と再生互換性を両立。 |
 | | **FastStart & Params**<br>最適化＆命名規則 | MP4の即時再生最適化（`-movflags +faststart`）を常時自動適用。設定パラメータを出力ファイル名に自動埋め込み可能（例: `_blurred_(G51-M50-CRF23).mp4`）。 |
@@ -160,6 +161,18 @@ python scripts/download_models.py
 - **自動レジューム**:
   - Pass 1（顔検出）の途中で中断した場合は記録されたフレームから再開、Pass 2（モザイク描画）の途中で中断した場合は Pass 1 を丸ごとスキップして Pass 2 から即座に再開します。
 
+### 3.5 自動アップデート機能（Self-Update）
+
+face-mosaic には、ワンクリックで最新リリースを確認・取得できるセルフアップデート機能が備わっています。
+
+- **GUIからの更新**:
+  - メニューバーの `Help` → `🔄 Check for Updates...` または画面下部のログボタン横にある `🔄 Check Update` ボタンをクリック。
+  - アプリ起動2秒後にバックグラウンドで最新バージョンを静かに確認し、新バージョンがある場合はボタンが鮮やかな緑色（`🎉 Update to vX.X.X`）に変わり、更新ダイアログが表示されます。
+  - 「はい」を選択するだけで、進捗インジケーター付きで自動更新が行われます。
+- **Gitリポジトリ／スタンドアロン自動判別**:
+  - Gitリポジトリで運用している場合は自動で `git pull` ＋ 仮想環境（venv）の依存ライブラリ更新を実行。
+  - 配布ZIP（スタンドアロン版）の場合はGitHub Releasesから最新アーカイブを自動取得し、安全に上書き配置します。
+
 ---
 
 ## 4. 上級者向け機能：CLI（コマンドライン）での実行
@@ -196,6 +209,10 @@ python -m face_mosaic.cli /path/to/watch_folder --watch
 
 # 設定ファイル (YAML) を指定して実行
 python -m face_mosaic.cli video.mp4 --config configs/config.default.yaml
+
+# アップデート確認・実行 (CLI)
+python -m face_mosaic.cli --check-update
+python -m face_mosaic.cli --update
 ```
 
 ### 4.3 コマンドライン引数一覧
@@ -210,13 +227,16 @@ python -m face_mosaic.cli video.mp4 --config configs/config.default.yaml
 | `--strength, -s` | ぼかし強度（奇数整数）またはモザイクブロックサイズ | `51` / `28` |
 | `--conf` | 顔検出の信頼度閾値 (0.0〜1.0) | `0.5` |
 | `--pad-back` | 顔検出前のぼかし延長フレーム数 (N)（事前モザイク） | `12` |
-| `--pad-fwd` | 顔検出後のぼかし延長フレーム数 (M) | `8` |
+| `--pad-fwd` | 顔検出後のぼかし延長フレーム数 (M) | `24` |
 | `--no-illustration-filter` | イラスト・アニメ顔の自動除外フィルターを無効化 | `False` |
 | `--codec` | 出力動画コーデック (`hevc` または `h264`) | `hevc` |
 | `--crf` | CRF品質パラメータ（数値が小さいほど高画質） | `18` |
 | `--output-dir, -o` | 出力フォルダ（省略時は入力と同じフォルダ） | `""` |
 | `--no-recursive` | フォルダ探索時に再帰探索を無効化 | `False` |
 | `--watch` | フォルダ監視モード（新規動画を検知して自動処理） | `False` |
+| `--check-update` | GitHub Releasesから最新バージョンを確認 | `False` |
+| `--update, --self-update` | face-mosaic を最新バージョンに自動更新 | `False` |
+
 
 ---
 

@@ -166,8 +166,50 @@ def main():
         action="store_true",
         help="Disable recursive search in directories"
     )
+    parser.add_argument(
+        "--check-update",
+        action="store_true",
+        help="Check GitHub for newer versions of face-mosaic"
+    )
+    parser.add_argument(
+        "--update", "--self-update",
+        action="store_true",
+        dest="self_update",
+        help="Perform self-update to the latest version"
+    )
 
     args = parser.parse_args()
+
+    # Self-update handling
+    if args.check_update:
+        from .updater import check_for_updates
+        from face_mosaic import __version__
+        print(f"Current version: v{__version__}")
+        print("Checking GitHub for updates...")
+        info = check_for_updates()
+        if info:
+            print(f"\n🎉 New version available: {info['tag_name']}")
+            print(f"Release: {info['title']}")
+            print(f"URL: {info['html_url']}")
+            print("\nRun 'python -m face_mosaic.cli --update' to update.")
+        else:
+            print("✓ You are already using the latest version.")
+        return
+
+    if args.self_update:
+        from .updater import perform_self_update
+        from face_mosaic import __version__
+        print(f"Current version: v{__version__}")
+        print("Starting self-update...")
+        def on_prog(msg: str, cur: int, tot: int):
+            print(f"  [{cur}%] {msg}")
+        success, message = perform_self_update(on_prog)
+        if success:
+            print(f"\n✓ {message}")
+        else:
+            print(f"\n✗ {message}")
+            sys.exit(1)
+        return
 
     if args.gui or len(args.inputs) == 0:
         from .gui import run_app
