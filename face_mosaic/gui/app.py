@@ -1764,9 +1764,20 @@ def run_app():
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
 
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec())
+    except Exception:
+        import traceback
+        err_msg = traceback.format_exc()
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(None, "face-mosaic エラー", f"エラーが発生しました:\n\n{err_msg}")
+        except Exception:
+            pass
+        print(err_msg, file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
