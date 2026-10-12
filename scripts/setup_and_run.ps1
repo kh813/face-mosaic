@@ -1,4 +1,4 @@
-# setup_and_run.ps1
+﻿# setup_and_run.ps1
 # Automates Windows environment setup and launches face-mosaic GUI / CLI.
 
 param(
@@ -11,6 +11,9 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $rootDir = (Get-Item $scriptDir).Parent.FullName
 
 Set-Location $rootDir
+
+# Ensure Python operates in UTF-8 mode regardless of system locale/code page
+$env:PYTHONUTF8 = "1"
 
 try {
     Write-Host "==========================================================" -ForegroundColor Cyan
