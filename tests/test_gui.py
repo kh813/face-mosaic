@@ -858,6 +858,18 @@ def test_gui_crf_presets_and_output_options(qapp, tmp_path, monkeypatch):
     assert cfg.output.append_params_to_filename is True
 
 
+def test_gui_window_centering(qapp):
+    window = MainWindow()
+    assert hasattr(window, "_center_on_screen")
+    window._center_on_screen()
+    # Check that window fits within primary screen available geometry
+    screen = QApplication.primaryScreen()
+    if screen:
+        avail = screen.availableGeometry()
+        assert window.width() <= avail.width()
+        assert window.height() <= avail.height()
+
+
 
 
 

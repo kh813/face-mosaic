@@ -24,7 +24,7 @@ import numpy as np
 import cv2
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QRect, QSize, QPoint, QSettings, QMimeData, QItemSelectionModel, QUrl
-from PySide6.QtGui import QImage, QPixmap, QPainter, QColor, QFont, QAction, QDrag, QKeySequence, QShortcut, QIcon
+from PySide6.QtGui import QImage, QPixmap, QPainter, QColor, QFont, QAction, QDrag, QKeySequence, QShortcut, QIcon, QCursor
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QProgressBar, QTextEdit,
@@ -900,6 +900,46 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(lbl_footer_disclaimer)
 
         main_layout.addWidget(right_panel, stretch=6)
+
+        self._has_centered = False
+        self._center_on_screen()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not getattr(self, "_has_centered", False):
+            self._has_centered = True
+            self._center_on_screen()
+
+    def _center_on_screen(self):
+        """
+        Center window on screen and ensure it fits comfortably within
+        the available screen geometry (avoiding overflow on smaller/scaled displays).
+        """
+        screen = None
+        try:
+            cursor_pos = QCursor.pos()
+            screen = QApplication.screenAt(cursor_pos)
+        except Exception:
+            pass
+        if not screen:
+            screen = QApplication.primaryScreen()
+        if not screen:
+            return
+
+        avail = screen.availableGeometry()
+
+        # Scale down if display resolution/scaling causes the window to overflow
+        max_w = max(640, avail.width() - 40)
+        max_h = max(480, avail.height() - 60)
+        target_w = min(self.width(), max_w)
+        target_h = min(self.height(), max_h)
+
+        if target_w != self.width() or target_h != self.height():
+            self.resize(target_w, target_h)
+
+        geo = self.frameGeometry()
+        geo.moveCenter(avail.center())
+        self.move(geo.topLeft())
 
     def _on_blur_type_changed(self, text: str):
         if text.lower() == "mosaic":
